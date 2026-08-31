@@ -22,3 +22,4 @@ main{min-height:calc(100vh - 123px)}.tab-panel{display:none;padding:20px}.tab-pa
   body{background:#fff}.app-header,.tabs,.public-toolbar,.status-line,#planningTab,#activitiesTab,#adminTab,.toast-container{display:none!important}
   main,.tab-panel{padding:0!important}.tab-panel{display:none!important}#scheduleTab{display:block!important}.schedule-list{display:block;max-width:none}.meeting-card{break-inside:avoid;box-shadow:none;margin-bottom:12px;border-color:#aaa}.meeting-card-header{background:#f2f2f2!important}.event-table th{background:#f7f7f7!important}
 }
+.small-text{font-size:.78rem;line-height:1.25;margin-top:2px}

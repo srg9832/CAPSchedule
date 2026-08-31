@@ -1,4 +1,4 @@
-const CACHE = 'cap-schedule-shell-v1';
+const CACHE = 'cap-schedule-shell-v2';
 const SHELL = [
   './', './index.html', './styles.css', './config.js', './js/demo-data.js', './js/db.js', './js/app.js',
   './manifest.json', './assets/icon.svg'

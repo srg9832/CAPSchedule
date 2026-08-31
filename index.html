@@ -90,9 +90,20 @@
             <button id="planNextMonth" class="icon-button">›</button>
           </div>
         </div>
+        <div class="field">
+          <label for="planMeetingWeekday">Meeting Night</label>
+          <select id="planMeetingWeekday">
+            <option value="0">Sunday</option>
+            <option value="1">Monday</option>
+            <option value="2">Tuesday</option>
+            <option value="3">Wednesday</option>
+            <option value="4">Thursday</option>
+            <option value="5">Friday</option>
+            <option value="6">Saturday</option>
+          </select>
+        </div>
         <div class="toolbar-spacer"></div>
         <button id="copyMonthButton" class="button secondary">Copy Month</button>
-        <button id="generateMeetingsButton" class="button secondary">Generate Normal Meetings</button>
         <button id="publishButton" class="button primary">Publish Schedule</button>
       </div>
 
@@ -104,8 +115,10 @@
       <div class="planning-layout">
         <aside class="meeting-sidebar">
           <div class="sidebar-header">
-            <h2>Meeting Nights</h2>
-            <button id="addMeetingButton" class="button secondary small">+ Add</button>
+            <div>
+              <h2>Weekly Meetings</h2>
+              <div class="muted-text small-text">Dates are created automatically from the Meeting Night selection.</div>
+            </div>
           </div>
           <div id="meetingList" class="meeting-list"></div>
         </aside>
@@ -137,8 +150,8 @@
           <div id="requirementDashboard" class="requirement-dashboard"></div>
 
           <div id="plannerEmpty" class="empty-state">
-            <h2>Select or create a meeting</h2>
-            <p>Meeting dates for the selected month appear on the left. Generate the unit's normal weekly meetings or add an exception manually.</p>
+            <h2>Select a weekly meeting</h2>
+            <p>The selected month's normal meeting dates are created automatically. Choose a date on the left to build its detailed schedule.</p>
           </div>
 
           <div id="plannerWorkspace" class="planner-workspace hidden">

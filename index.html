@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0f2747" />
+  <meta name="description" content="Civil Air Patrol meeting schedule planning application" />
+  <title>CAP Schedule</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-mark">CAP</div>
+      <div>
+        <h1>CAP Schedule</h1>
+        <div class="subtitle">Civil Air Patrol Meeting Scheduler</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span id="modeBadge" class="badge muted">Loading…</span>
+      <span id="userLabel" class="user-label"></span>
+      <button id="loginButton" class="button secondary small">Editor Login</button>
+      <button id="accountButton" class="button secondary small hidden">Account</button>
+      <button id="logoutButton" class="button secondary small hidden">Log Out</button>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="Primary navigation">
+    <button class="tab active" data-tab="schedule">Schedule</button>
+    <button class="tab hidden" data-tab="planning" id="planningTabButton">Schedule Planning</button>
+    <button class="tab" data-tab="activities">Special Activities</button>
+    <button class="tab hidden" data-tab="admin" id="adminTabButton">Administration</button>
+  </nav>
+
+  <main>
+    <section id="scheduleTab" class="tab-panel active">
+      <div class="toolbar public-toolbar">
+        <div class="field">
+          <label for="publicUnitSelect">Unit</label>
+          <select id="publicUnitSelect"></select>
+        </div>
+        <div class="field">
+          <label for="publicProgramSelect">Schedule</label>
+          <select id="publicProgramSelect">
+            <option value="combined">Cadet + Senior</option>
+            <option value="cadet">Cadet</option>
+            <option value="senior">Senior</option>
+          </select>
+        </div>
+        <div class="field month-field">
+          <label>Month</label>
+          <div class="month-nav">
+            <button id="publicPrevMonth" class="icon-button" aria-label="Previous month">‹</button>
+            <button id="publicCurrentMonth" class="month-button"></button>
+            <button id="publicNextMonth" class="icon-button" aria-label="Next month">›</button>
+          </div>
+        </div>
+        <div class="field checkbox-field">
+          <label class="check-label"><input type="checkbox" id="saveDefaultSchedule" /> Display this schedule by default on this device</label>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <button id="printScheduleButton" class="button secondary">Print Schedule</button>
+      </div>
+
+      <div id="scheduleStatus" class="status-line"></div>
+      <div id="publicSchedule" class="schedule-list"></div>
+    </section>
+
+    <section id="planningTab" class="tab-panel">
+      <div class="toolbar planning-toolbar">
+        <div class="field">
+          <label for="planUnitSelect">Unit</label>
+          <select id="planUnitSelect"></select>
+        </div>
+        <div class="field">
+          <label for="planProgramSelect">Schedule</label>
+          <select id="planProgramSelect">
+            <option value="cadet">Cadet</option>
+            <option value="senior">Senior</option>
+          </select>
+        </div>
+        <div class="field month-field">
+          <label>Planning Month</label>
+          <div class="month-nav">
+            <button id="planPrevMonth" class="icon-button">‹</button>
+            <button id="planCurrentMonth" class="month-button"></button>
+            <button id="planNextMonth" class="icon-button">›</button>
+          </div>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <button id="copyMonthButton" class="button secondary">Copy Month</button>
+        <button id="generateMeetingsButton" class="button secondary">Generate Normal Meetings</button>
+        <button id="publishButton" class="button primary">Publish Schedule</button>
+      </div>
+
+      <div class="planning-meta">
+        <div><strong id="draftStatusLabel">Draft</strong><span id="draftVersionLabel" class="muted-text"></span></div>
+        <div id="plannerSaveStatus" class="muted-text"></div>
+      </div>
+
+      <div class="planning-layout">
+        <aside class="meeting-sidebar">
+          <div class="sidebar-header">
+            <h2>Meeting Nights</h2>
+            <button id="addMeetingButton" class="button secondary small">+ Add</button>
+          </div>
+          <div id="meetingList" class="meeting-list"></div>
+        </aside>
+
+        <div class="planner-main">
+          <div id="meetingEditorHeader" class="meeting-editor-header hidden">
+            <div class="meeting-editor-fields">
+              <div class="field grow">
+                <label for="meetingThemeSelect">Meeting Theme</label>
+                <select id="meetingThemeSelect"></select>
+              </div>
+              <div class="field grow">
+                <label for="meetingUniformSelect">Default UOD</label>
+                <select id="meetingUniformSelect"></select>
+              </div>
+              <div class="field">
+                <label for="meetingStartTime">Starts</label>
+                <input id="meetingStartTime" type="time" step="300" />
+              </div>
+              <div class="field">
+                <label for="meetingEndTime">Ends</label>
+                <input id="meetingEndTime" type="time" step="300" />
+              </div>
+              <button id="copyMeetingButton" class="button secondary">Copy Meeting</button>
+              <button id="cancelMeetingButton" class="button danger ghost">Cancel Meeting</button>
+            </div>
+          </div>
+
+          <div id="requirementDashboard" class="requirement-dashboard"></div>
+
+          <div id="plannerEmpty" class="empty-state">
+            <h2>Select or create a meeting</h2>
+            <p>Meeting dates for the selected month appear on the left. Generate the unit's normal weekly meetings or add an exception manually.</p>
+          </div>
+
+          <div id="plannerWorkspace" class="planner-workspace hidden">
+            <div class="planner-actions">
+              <button id="addEventButton" class="button primary small">+ Add Activity</button>
+              <button id="activityLibraryButton" class="button secondary small">Activity Library</button>
+              <button id="meetingTemplatesButton" class="button secondary small">Meeting Templates</button>
+              <span class="planner-hint">Drag blocks to change time or room. Drag the bottom edge to change duration. Double-click to edit details.</span>
+            </div>
+            <div id="plannerBoard" class="planner-board"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="activitiesTab" class="tab-panel">
+      <div class="toolbar">
+        <div class="field">
+          <label for="activityUnitFilter">Unit</label>
+          <select id="activityUnitFilter"><option value="all">All Units Statewide</option></select>
+        </div>
+        <div class="field">
+          <label for="activityRangeFilter">Time</label>
+          <select id="activityRangeFilter">
+            <option value="upcoming">Upcoming</option>
+            <option value="90">Next 90 Days</option>
+            <option value="year">This Year</option>
+            <option value="history">History</option>
+          </select>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <button id="addSpecialActivityButton" class="button primary hidden">+ Plan Special Activity</button>
+      </div>
+      <div class="section-heading">
+        <div>
+          <h2>Statewide Special Activities</h2>
+          <p>Weekend activities, exercises, orientation flights, open houses, training events, and other non-standard unit meetings.</p>
+        </div>
+      </div>
+      <div id="specialActivitiesList" class="activity-cards"></div>
+    </section>
+
+    <section id="adminTab" class="tab-panel">
+      <div class="admin-layout">
+        <aside class="admin-nav">
+          <button class="admin-nav-item active" data-admin-page="units">Units</button>
+          <button class="admin-nav-item" data-admin-page="users">Users & Permissions</button>
+          <button class="admin-nav-item" data-admin-page="rooms">Rooms</button>
+          <button class="admin-nav-item" data-admin-page="settings">Schedule Settings</button>
+          <button class="admin-nav-item app-admin-only" data-admin-page="requirements">CAP Requirements</button>
+          <button class="admin-nav-item app-admin-only" data-admin-page="audit">Audit Log</button>
+        </aside>
+        <div class="admin-content">
+          <div id="adminUnitsPage" class="admin-page active"></div>
+          <div id="adminUsersPage" class="admin-page"></div>
+          <div id="adminRoomsPage" class="admin-page"></div>
+          <div id="adminSettingsPage" class="admin-page"></div>
+          <div id="adminRequirementsPage" class="admin-page"></div>
+          <div id="adminAuditPage" class="admin-page"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+  <dialog id="accountDialog" class="modal small-modal">
+    <form id="accountForm" method="dialog">
+      <div class="modal-header"><h2>Account</h2><button type="button" class="icon-button close-dialog">×</button></div>
+      <div class="modal-body">
+        <p class="muted-text">Newly invited users can set a password here after opening their Supabase invitation link. Existing users can also change their password.</p>
+        <div class="field"><label for="accountPassword">New Password</label><input id="accountPassword" type="password" minlength="8" autocomplete="new-password" required /></div>
+        <div class="field" style="margin-top:10px"><label for="accountPasswordConfirm">Confirm Password</label><input id="accountPasswordConfirm" type="password" minlength="8" autocomplete="new-password" required /></div>
+        <div id="accountError" class="error-text"></div>
+      </div>
+      <div class="modal-footer"><button type="button" class="button secondary close-dialog">Cancel</button><button type="submit" class="button primary">Set Password</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="loginDialog" class="modal small-modal">
+    <form id="loginForm" method="dialog">
+      <div class="modal-header"><h2>Editor Login</h2><button type="button" class="icon-button close-dialog">×</button></div>
+      <div class="modal-body">
+        <div class="field"><label for="loginEmail">Email</label><input id="loginEmail" type="email" autocomplete="username" required /></div>
+        <div class="field"><label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password" required /></div>
+        <div id="loginError" class="error-text"></div>
+      </div>
+      <div class="modal-footer"><button type="button" class="button secondary close-dialog">Cancel</button><button type="submit" class="button primary">Log In</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="eventDialog" class="modal">
+    <form id="eventForm" method="dialog">
+      <input type="hidden" id="eventId" />
+      <div class="modal-header"><h2 id="eventDialogTitle">Schedule Activity</h2><button type="button" class="icon-button close-dialog">×</button></div>
+      <div class="modal-body form-grid two-col">
+        <div class="field span-2"><label for="eventTitle">Activity</label><input id="eventTitle" required /></div>
+        <div class="field"><label for="eventStart">Start</label><input id="eventStart" type="time" step="300" required /></div>
+        <div class="field"><label for="eventEnd">End</label><input id="eventEnd" type="time" step="300" required /></div>
+        <div class="field"><label for="eventRoom">Room / Location</label><select id="eventRoom"></select></div>
+        <div class="field"><label for="eventCategory">Category</label><select id="eventCategory"></select></div>
+        <div class="field"><label for="eventAudience">Audience</label><input id="eventAudience" placeholder="All Cadets, Airmen, Senior Members…" /></div>
+        <div class="field"><label for="eventInstructor">Instructor / OPR</label><input id="eventInstructor" placeholder="Optional" /></div>
+        <div class="field"><label for="eventUniform">Uniform Override</label><select id="eventUniform"></select></div>
+        <div class="field span-2"><label for="eventDescription">Notes / Description</label><textarea id="eventDescription" rows="3"></textarea></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="deleteEventButton" class="button danger ghost hidden">Delete</button>
+        <div class="toolbar-spacer"></div>
+        <button type="button" class="button secondary close-dialog">Cancel</button>
+        <button type="submit" class="button primary">Save Activity</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="meetingDialog" class="modal small-modal">
+    <form id="meetingForm" method="dialog">
+      <div class="modal-header"><h2>Add Meeting</h2><button type="button" class="icon-button close-dialog">×</button></div>
+      <div class="modal-body">
+        <div class="field"><label for="newMeetingDate">Date</label><input id="newMeetingDate" type="date" required /></div>
+      </div>
+      <div class="modal-footer"><button type="button" class="button secondary close-dialog">Cancel</button><button type="submit" class="button primary">Add Meeting</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="copyMonthDialog" class="modal small-modal">
+    <form id="copyMonthForm" method="dialog">
+      <div class="modal-header"><h2>Copy a Month</h2><button type="button" class="icon-button close-dialog">×</button></div>
+      <div class="modal-body">
+        <p class="muted-text">Copies meetings and activities into the current draft. Dates are shifted by week position and can be adjusted afterward.</p>
+        <div class="field"><label for="copySourceMonth">Source Month</label><input id="copySourceMonth" type="month" required /></div>
+      </div>
+      <div class="modal-footer"><button type="button" class="button secondary close-dialog">Cancel</button><button type="submit" class="button primary">Copy</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="specialActivityDialog" class="modal">
+    <form id="specialActivityForm" method="dialog">
+      <input type="hidden" id="specialActivityId" />
+      <div class="modal-header"><h2>Plan Special Activity</h2><button type="button" class="icon-button close-dialog">×</button></div>
+      <div class="modal-body form-grid two-col">
+        <div class="field"><label for="specialUnit">Unit</label><select id="specialUnit" required></select></div>
+        <div class="field"><label for="specialAudience">Audience</label><input id="specialAudience" placeholder="Cadets, Seniors, Everyone…" /></div>
+        <div class="field span-2"><label for="specialTitle">Activity</label><input id="specialTitle" required /></div>
+        <div class="field"><label for="specialStart">Starts</label><input id="specialStart" type="datetime-local" required /></div>
+        <div class="field"><label for="specialEnd">Ends</label><input id="specialEnd" type="datetime-local" required /></div>
+        <div class="field span-2"><label for="specialLocation">Location</label><input id="specialLocation" /></div>
+        <div class="field span-2"><label for="specialDescription">Description / Coordination Notes</label><textarea id="specialDescription" rows="4"></textarea></div>
+        <div class="field span-2"><label class="check-label"><input type="checkbox" id="specialPublish" checked /> Publish statewide when saved</label></div>
+      </div>
+      <div class="modal-footer"><button type="button" class="button secondary close-dialog">Cancel</button><button type="submit" class="button primary">Save Activity</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="templateDialog" class="modal">
+    <div class="modal-header"><h2>Meeting Templates</h2><button type="button" class="icon-button close-dialog">×</button></div>
+    <div class="modal-body">
+      <div class="card" style="margin-bottom:12px">
+        <strong>Save selected meeting as a template</strong>
+        <div style="display:flex;gap:8px;margin-top:8px"><input id="newTemplateName" style="flex:1;border:1px solid #bdc8d6;border-radius:8px;padding:8px 10px" placeholder="Example: Leadership & Character Night"><button id="saveTemplateButton" class="button primary small">Save Template</button></div>
+      </div>
+      <div id="templateList" class="library-list"></div>
+    </div>
+    <div class="modal-footer"><button type="button" class="button secondary close-dialog">Close</button></div>
+  </dialog>
+
+  <dialog id="libraryDialog" class="modal">
+    <div class="modal-header"><h2>Activity Library</h2><button type="button" class="icon-button close-dialog">×</button></div>
+    <div class="modal-body"><div id="activityLibraryList" class="library-list"></div></div>
+    <div class="modal-footer"><button type="button" class="button secondary close-dialog">Close</button></div>
+  </dialog>
+
+  <script src="config.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

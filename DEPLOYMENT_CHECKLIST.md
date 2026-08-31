@@ -1,0 +1,21 @@
+# CAP Schedule Deployment Checklist
+
+- [ ] Create Supabase project.
+- [ ] Run `supabase/schema.sql`.
+- [ ] Create first Auth user.
+- [ ] Promote first user to `profiles.is_app_admin = true`.
+- [ ] Deploy `admin-users` Edge Function.
+- [ ] Put Supabase URL + anon key in `config.js`.
+- [ ] Upload website files to GitHub.
+- [ ] Enable GitHub Pages.
+- [ ] Log in to CAP Schedule.
+- [ ] Create first unit.
+- [ ] Add rooms.
+- [ ] Add/invite editors and permissions.
+- [ ] Verify CAP requirement values.
+- [ ] Generate the first planning month.
+- [ ] Publish it.
+- [ ] Log out and verify the schedule is publicly viewable.
+- [ ] Test another unit selector.
+- [ ] Test Cadet / Senior / Combined views.
+- [ ] Test phone installation/PWA.

@@ -1,0 +1,12 @@
+{
+  "name": "CAP Schedule",
+  "short_name": "CAP Schedule",
+  "description": "Civil Air Patrol weekly meeting and statewide special-activity scheduling.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#0f2747",
+  "icons": [
+    {"src":"assets/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}

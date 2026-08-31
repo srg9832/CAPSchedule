@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0f2747"/>
+  <rect x="82" y="112" width="348" height="310" rx="34" fill="#ffffff"/>
+  <rect x="82" y="112" width="348" height="92" rx="34" fill="#c62828"/>
+  <rect x="82" y="170" width="348" height="34" fill="#c62828"/>
+  <circle cx="168" cy="112" r="19" fill="#0f2747"/>
+  <circle cx="344" cy="112" r="19" fill="#0f2747"/>
+  <text x="256" y="331" text-anchor="middle" font-family="Arial, sans-serif" font-weight="700" font-size="112" fill="#0f2747">CAP</text>
+</svg>

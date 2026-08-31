@@ -128,17 +128,45 @@ export class CapScheduleDB {
         draft.meetings=(draft.meetings||[]).map(m=>({...m,id:uid('m'),events:(m.events||[]).map(e=>({...e,id:uid('e')}))}));
         s.versions.push(draft);this.persistDemo();
       }
+      const unit=this.demo.units.find(u=>u.id===unitId);
+      if(s.meeting_weekday===undefined||s.meeting_weekday===null)s.meeting_weekday=Number(unit?.meeting_weekday??1);
+      const d=new Date(year,month-1,1);
+      while(d.getMonth()===month-1){
+        if(d.getDay()===Number(s.meeting_weekday)){
+          const date=`${year}-${String(month).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          if(!draft.meetings.some(m=>m.meeting_date===date))draft.meetings.push({id:uid('m'),meeting_date:date,theme_id:null,uniform_id:null,start_time:unit?.default_start_time||'18:30',end_time:unit?.default_end_time||'21:00',is_cancelled:false,cancel_reason:null,title:null,events:[]});
+        }
+        d.setDate(d.getDate()+1);
+      }
+      draft.meetings.sort((a,b)=>a.meeting_date.localeCompare(b.meeting_date));this.persistDemo();
       return {schedule:deepClone(s),version:deepClone(draft)};
     }
     const {data,error}=await this.client.rpc('get_or_create_schedule_draft',{p_unit_id:unitId,p_program_type:program,p_year:year,p_month:month}); if(error) throw error;
+    const {error:syncError}=await this.client.rpc('sync_normal_meetings',{p_schedule_version_id:data}); if(syncError) throw syncError;
     return this.fetchDraftVersion(data);
   }
   async fetchDraftVersion(versionId){
-    const {data:v,error:ve}=await this.client.from('schedule_versions').select('*,schedules(*)').eq('id',versionId).single(); if(ve) throw ve;
+    // Fetch separately instead of embedding schedules. schedules <-> schedule_versions has
+    // two FK paths (schedule_id and current_published_version_id), which makes PostgREST
+    // relationship embedding ambiguous.
+    const {data:v,error:ve}=await this.client.from('schedule_versions').select('*').eq('id',versionId).single(); if(ve) throw ve;
+    const {data:schedule,error:se}=await this.client.from('schedules').select('*').eq('id',v.schedule_id).single(); if(se) throw se;
     const {data:meetings,error:me}=await this.client.from('meetings').select('*').eq('schedule_version_id',versionId).order('meeting_date'); if(me) throw me;
     const ids=(meetings||[]).map(m=>m.id); let events=[];
     if(ids.length){const r=await this.client.from('meeting_events').select('*').in('meeting_id',ids).order('start_time');if(r.error)throw r.error;events=r.data||[];}
-    return {schedule:v.schedules,version:{...v,meetings:(meetings||[]).map(m=>({...m,events:events.filter(e=>e.meeting_id===m.id)}))}};
+    return {schedule,version:{...v,meetings:(meetings||[]).map(m=>({...m,events:events.filter(e=>e.meeting_id===m.id)}))}};
+  }
+
+  async setScheduleMeetingWeekday(versionId,weekday){
+    weekday=Number(weekday);
+    if(!Number.isInteger(weekday)||weekday<0||weekday>6)throw new Error('Choose a valid meeting weekday.');
+    if(this.demoMode){
+      const found=this.findDemoVersion(versionId);const unit=this.demo.units.find(u=>u.id===found.schedule.unit_id);found.schedule.meeting_weekday=weekday;
+      // Remove only untouched auto-generated meetings from the old weekday; preserve anything with actual planning data.
+      found.version.meetings=found.version.meetings.filter(m=>new Date(`${m.meeting_date}T12:00:00`).getDay()===weekday||(m.events||[]).length||m.theme_id||m.uniform_id||m.title||m.is_cancelled);
+      const d=new Date(found.schedule.year,found.schedule.month-1,1);while(d.getMonth()===found.schedule.month-1){if(d.getDay()===weekday){const date=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;if(!found.version.meetings.some(m=>m.meeting_date===date))found.version.meetings.push({id:uid('m'),meeting_date:date,theme_id:null,uniform_id:null,start_time:unit?.default_start_time||'18:30',end_time:unit?.default_end_time||'21:00',is_cancelled:false,cancel_reason:null,title:null,events:[]});}d.setDate(d.getDate()+1);}found.version.meetings.sort((a,b)=>a.meeting_date.localeCompare(b.meeting_date));this.persistDemo();return {schedule:deepClone(found.schedule),version:deepClone(found.version)};
+    }
+    const {error}=await this.client.rpc('set_schedule_meeting_weekday',{p_schedule_version_id:versionId,p_weekday:weekday});if(error)throw error;return this.fetchDraftVersion(versionId);
   }
 
   async generateNormalMeetings(versionId){
@@ -212,7 +240,10 @@ export class CapScheduleDB {
   }
   async saveSpecialActivity(activity){
     if(!this.canEdit(activity.unit_id,'cadet')&&!this.canEdit(activity.unit_id,'senior'))throw new Error('You do not have edit permission for this unit.');
-    const clean={unit_id:activity.unit_id,title:activity.title,audience:activity.audience||null,starts_at:activity.starts_at,ends_at:activity.ends_at,location:activity.location||null,description:activity.description||null,status:activity.status||'published'};
+    const start=new Date(activity.starts_at),end=new Date(activity.ends_at);
+    if(Number.isNaN(start.getTime())||Number.isNaN(end.getTime()))throw new Error('Enter a valid start and end date/time.');
+    if(end<=start)throw new Error('The special activity end time must be after the start time.');
+    const clean={unit_id:activity.unit_id,title:activity.title,audience:activity.audience||null,starts_at:start.toISOString(),ends_at:end.toISOString(),location:activity.location||null,description:activity.description||null,status:activity.status||'published'};
     if(this.demoMode){let row;if(activity.id){row=this.demo.specialActivities.find(x=>x.id===activity.id);Object.assign(row,clean);}else{row={id:uid('sp'),...clean};this.demo.specialActivities.push(row);}this.persistDemo();return deepClone(row);}
     if(activity.id){const {data,error}=await this.client.from('special_activities').update(clean).eq('id',activity.id).select().single();if(error)throw error;return data;}
     const {data,error}=await this.client.from('special_activities').insert(clean).select().single();if(error)throw error;return data;

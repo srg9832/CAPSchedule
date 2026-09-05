@@ -33,6 +33,16 @@ export function buildDemoState() {
       {id:'r4',unit_id:DEMO_IDS.unit2,name:'Training Room',sort_order:1,active:true},
       {id:'r5',unit_id:DEMO_IDS.unit2,name:'Hangar',sort_order:2,active:true}
     ],
+    groups: [
+      {id:'g-all',unit_id:DEMO_IDS.unit1,name:'All Members',color:'#3b6f9f',sort_order:1,active:true},
+      {id:'g-air',unit_id:DEMO_IDS.unit1,name:'Airmen',color:'#2f855a',sort_order:10,active:true},
+      {id:'g-nco',unit_id:DEMO_IDS.unit1,name:'NCO',color:'#805ad5',sort_order:20,active:true},
+      {id:'g-off',unit_id:DEMO_IDS.unit1,name:'Officer',color:'#c05621',sort_order:30,active:true},
+      {id:'g-gs',unit_id:DEMO_IDS.unit1,name:'Great Start',color:'#d69e2e',sort_order:40,active:true},
+      {id:'g-senior',unit_id:DEMO_IDS.unit1,name:'Senior Members',color:'#4a5568',sort_order:50,active:true},
+      {id:'g2-cadets',unit_id:DEMO_IDS.unit2,name:'Cadets',color:'#2f855a',sort_order:10,active:true},
+      {id:'g2-senior',unit_id:DEMO_IDS.unit2,name:'Senior Members',color:'#4a5568',sort_order:20,active:true}
+    ],
     categories: [
       {id:'c-lead',name:'Leadership',requirement_key:'leadership'},
       {id:'c-aero',name:'Aerospace',requirement_key:'aerospace'},
@@ -133,8 +143,11 @@ export function buildDemoState() {
       }
     ],
     specialActivities: [
-      {id:'sp1',unit_id:DEMO_IDS.unit1,title:'Ground Team Field Training Exercise',audience:'Cadets & Senior Members',starts_at:new Date(year,month+1,12,8,0).toISOString(),ends_at:new Date(year,month+1,12,16,0).toISOString(),location:'Regional Training Area',description:'Statewide ground-team navigation and field skills training.',status:'published'},
-      {id:'sp2',unit_id:DEMO_IDS.unit2,title:'Orientation Flight Day',audience:'Cadets',starts_at:new Date(year,month+1,19,9,0).toISOString(),ends_at:new Date(year,month+1,19,15,0).toISOString(),location:'Municipal Airport',description:'Cadet orientation flights; weather dependent.',status:'published'}
+      {id:'sp1',unit_id:DEMO_IDS.unit1,title:'Ground Team Field Training Exercise',audience:null,starts_at:new Date(year,month+1,12,8,0).toISOString(),ends_at:new Date(year,month+1,12,16,0).toISOString(),location:'Regional Training Area',description:'Statewide ground-team navigation and field skills training.',status:'published',rooms:[{id:'spr1',activity_id:'sp1',name:'Base',sort_order:1,active:true},{id:'spr2',activity_id:'sp1',name:'Field Lane',sort_order:2,active:true}],events:[
+        {id:'spe1',activity_id:'sp1',room_id:'spr1',starts_at:new Date(year,month+1,12,8,0).toISOString(),ends_at:new Date(year,month+1,12,8,30).toISOString(),title:'Check-in / Safety Brief',category_id:'c-safe',instructor_name:'Activity Director',uniform_override_id:'u-ocp',description:'',group_ids:['g-all']},
+        {id:'spe2',activity_id:'sp1',room_id:'spr2',starts_at:new Date(year,month+1,12,9,0).toISOString(),ends_at:new Date(year,month+1,12,11,30).toISOString(),title:'Land Navigation Lanes',category_id:'c-es',instructor_name:'Ground Team Leaders',uniform_override_id:'u-ocp',description:'',group_ids:['g-air','g-nco','g-off']}
+      ]},
+      {id:'sp2',unit_id:DEMO_IDS.unit2,title:'Orientation Flight Day',audience:null,starts_at:new Date(year,month+1,19,9,0).toISOString(),ends_at:new Date(year,month+1,19,15,0).toISOString(),location:'Municipal Airport',description:'Cadet orientation flights; weather dependent.',status:'published',rooms:[{id:'spr3',activity_id:'sp2',name:'Briefing Room',sort_order:1,active:true}],events:[]}
     ]
   };
 }
@@ -143,5 +156,12 @@ function makeMeeting(id,date,theme_id,uniform_id,start_time,end_time,events){
   return {id,meeting_date:date,theme_id,uniform_id,start_time,end_time,is_cancelled:false,cancel_reason:null,title:null,events};
 }
 function ev(id,room_id,start_time,end_time,title,category_id,audience,instructor_name){
-  return {id,room_id,start_time,end_time,title,category_id,audience,instructor_name,uniform_override_id:null,description:''};
+  const a=String(audience||'').toLowerCase();
+  let group_ids=[];
+  if(a.includes('senior')) group_ids=['g-senior'];
+  else if(a.includes('airmen')) group_ids=['g-air'];
+  else if(a.includes('nco')) group_ids=['g-nco'];
+  else if(a.includes('officer')) group_ids=['g-off'];
+  else if(a.includes('all')||a.includes('cadet')) group_ids=['g-all'];
+  return {id,room_id,start_time,end_time,title,category_id,audience:null,group_ids,instructor_name,uniform_override_id:null,description:''};
 }

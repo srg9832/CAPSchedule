@@ -1,5 +1,5 @@
-const CACHE='cap-schedule-v3-shell-2';
-const RUNTIME='cap-schedule-v3-runtime-2';
+const CACHE='cap-schedule-v3-shell-3';
+const RUNTIME='cap-schedule-v3-runtime-3';
 const SUPABASE_ESM='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 const SHELL=[
   './','./index.html','./styles.css','./config.js','./manifest.json','./service-worker.js',

@@ -28,6 +28,15 @@ a{color:#1369ab}button:focus-visible,input:focus-visible,textarea:focus-visible,
 .message-by{display:flex;flex-wrap:wrap;align-items:baseline;gap:9px;font-size:12px;color:#263d53}.message-by small{font-size:10px;color:#8899aa}
 .message-entry .bubble-row{max-width:100%}.message-actions{display:flex;gap:4px}.mini-action{padding:4px 7px;color:#697c8c;border:0;border-radius:6px;background:transparent;font-size:11px}.mini-action:hover{background:#e3ebf2;color:#245f89}
 @media(max-width:640px){.message-entry{width:96%}.message-entry .profile-avatar{height:29px!important;width:29px!important;min-width:29px!important}}
+
+.contact-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #e9eef4}
+.contact-item:last-child{border-bottom:0}
+.contact-item[hidden]{display:none!important}
+.contact-details{flex:1;min-width:160px}.contact-details strong{font-size:13px;color:#183b58}
+.unit-switch{display:flex;align-items:center;gap:6px;min-width:150px}
+.unit-switch .field{width:clamp(155px,20vw,260px);padding:8px 9px;font-size:12px}
+.unit-switch .smallcap{white-space:nowrap}
+@media(max-width:640px){.unit-switch{min-width:0}.unit-switch .field{width:clamp(112px,36vw,185px)}.unit-switch .smallcap{display:none}.contact-item{flex-wrap:wrap}.contact-details{min-width:120px}}
 </style>
 </head>
 <body><div id="app"><div class="center-screen"><p>Opening CAP Messenger…</p></div></div><div id="overlay"></div><div id="toast"></div>
@@ -44,7 +53,7 @@ function icon(n){const paths={chat:'<path d="M21 11a8 8 0 0 1-8 8H6l-4 3V9a8 8 0
 function toast(msg){const n=document.getElementById('toast');n.innerHTML='<div class="toast">'+esc(msg)+'</div>';clearTimeout(toast.t);toast.t=setTimeout(()=>n.innerHTML='',4700)}
 function err(e){toast(e&&e.message?e.message:String(e));console.error(e)}
 function short(s,n){return esc(String(s||'').slice(0,n||90))}
-const menus=[['chats','Chats'],['board','Bulletin Boards'],['tasks','Requests'],['users','Directory'],['calendar','CAP Schedule'],['settings','Settings']];
+const menus=[['chats','Chats'],['board','Bulletin Boards'],['tasks','Requests'],['users','Contacts'],['calendar','CAP Schedule'],['settings','Settings']];
 function nav(){let m=menus.slice();if(state.profile&&(state.profile.unit_admin||state.profile.platform_admin))m.splice(4,0,['shield','Administration']);return m}
 function setTab(n){if(n==='calendar'){window.open('https://srg9832.github.io/CAPSchedule/','_blank','noopener');return}state.tab=n;state.activeThread=null;state.activePost=null;state.view='';refreshTab()}
 
@@ -102,7 +111,7 @@ return '<div class="row between" style="margin-bottom:18px;flex-wrap:wrap"><div>
 (!p.deleted_at&&p.comments_locked?'<span>Comments closed</span>':'')+'</div></article>').join(''):'<div class="empty"><h3>No posts yet</h3><p>Start a discussion or share an update.</p></div>')
 }
 
-function requestView(){let admin=state.profile.unit_admin||state.profile.platform_admin;return '<div class="row between" style="margin-bottom:20px;flex-wrap:wrap"><div><h2 class="headline">Member Requests</h2><p class="subtitle" style="margin:0">Drill tests and leadership feedback — in submission order.</p></div><button class="btn" data-act="new-request">'+icon('plus')+' New request</button></div><div class="card pad"><div class="smallcap">Request queue</div>'+(state.requests.length?state.requests.map(r=>'<div class="request-row"><div><strong>'+esc(nameOf(r.user_id))+'</strong> <span class="badge">'+(r.kind==='drill'?'Drill Test':'Leadership Feedback')+'</span><div class="hint">'+stamp(r.created_at)+(r.note?' • '+esc(r.note):'')+'</div></div><div class="row"><span class="badge '+esc(r.status)+'">'+esc(r.status)+'</span>'+(admin?'<select class="field" style="width:auto" data-request="'+r.id+'">'+['pending','scheduled','completed','cancelled'].map(s=>'<option value="'+s+'" '+(s===r.status?'selected':'')+'>'+s+'</option>').join('')+'</select>':'')+'</div></div>').join(''):'<div class="empty"><h3>No requests</h3>Requests submitted by members will appear here.</div>')+'</div>'}
+function requestView(){let admin=state.profile.unit_admin||state.profile.platform_admin;return '<div class="row between" style="margin-bottom:20px;flex-wrap:wrap"><div><h2 class="headline">Member Requests</h2><p class="subtitle" style="margin:0">Drill tests and leadership feedback — in submission order.</p></div>'+(state.activeUnitId===state.profile.unit_id?'<button class="btn" data-act="new-request">'+icon('plus')+' New request</button>':'')+'</div><div class="card pad"><div class="smallcap">Request queue</div>'+(state.requests.length?state.requests.map(r=>'<div class="request-row"><div><strong>'+esc(nameOf(r.user_id))+'</strong> <span class="badge">'+(r.kind==='drill'?'Drill Test':'Leadership Feedback')+'</span><div class="hint">'+stamp(r.created_at)+(r.note?' • '+esc(r.note):'')+'</div></div><div class="row"><span class="badge '+esc(r.status)+'">'+esc(r.status)+'</span>'+(admin?'<select class="field" style="width:auto" data-request="'+r.id+'">'+['pending','scheduled','completed','cancelled'].map(s=>'<option value="'+s+'" '+(s===r.status?'selected':'')+'>'+s+'</option>').join('')+'</select>':'')+'</div></div>').join(''):'<div class="empty"><h3>No requests</h3>Requests submitted by members will appear here.</div>')+'</div>'}
 
 function rosterIcon(r){
  const init=((r.first_name||'').slice(0,1)+(r.last_name||'').slice(0,1)).toUpperCase()||'??';
@@ -559,7 +568,21 @@ if(f.id==='request-form'){let r=await db.from('msg_requests').insert({user_id:st
 if(f.id==='quiet-form'){let start=f.elements.namedItem('start').value;let end=f.elements.namedItem('end').value;if(start!==''&&end==='')throw Error('Choose an end time');let hours=Number(f.elements.namedItem('hours').value);let r=await db.from('msg_quiet').upsert({user_id:state.user.id,extra_start:start===''?null:Number(start),extra_end:start===''?null:Number(end),extra_until:start===''?null:new Date(Date.now()+hours*3600000).toISOString()});if(r.error)throw r.error;toast('Quiet-hour preference saved')}
 if(f.id==='import-form'){const files=f.elements.namedItem('files').files;const result=await prepareCapwatch(files);capwatchReview(result,f.elements.namedItem('full').checked)}
 }catch(e){err(e)}finally{if(b)b.disabled=false}});
-document.addEventListener('change',async function(ev){let s=ev.target;if(s.id==='admin-unit-selector'){
+
+function filterDirectory(){
+ const term=(document.getElementById('contact-search')?.value||'').trim().toLowerCase();
+ const kind=document.getElementById('contact-kind-filter')?.value||'all';
+ const rows=document.querySelectorAll('[data-contact-row]');
+ for(const node of rows){
+   node.hidden=(!!term&&!node.dataset.contactName.toLowerCase().includes(term))
+     ||(kind!=='all'&&node.dataset.contactKind!==kind);
+ }
+}
+document.addEventListener('input',function(ev){
+ if(ev.target.id==='contact-search')filterDirectory();
+});
+document.addEventListener('change',async function(ev){let s=ev.target;
+if(s.id==='contact-kind-filter'){filterDirectory();return}if(s.id==='admin-unit-selector'){
  const old=state.activeUnitId;
  try{
   const r=await db.rpc('msg_switch_unit',{p_unit:s.value});

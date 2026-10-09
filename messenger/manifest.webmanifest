@@ -1,0 +1,19 @@
+{
+  "id": "./",
+  "name": "CAP Messenger — Prototype",
+  "short_name": "CAP Messenger",
+  "description": "Squadron messaging and bulletin boards proof of concept",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef2f6",
+  "theme_color": "#13283e",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

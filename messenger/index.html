@@ -162,7 +162,148 @@ modal('<h2>'+esc(p.title)+'</h2><p class="subtitle">'+esc(p.body)+'</p><div styl
 (p.comments_locked?'<p class="info">Comments closed.</p>':'<form id="comment-form"><label class="label">Add a comment</label><textarea class="field" name="body" rows="3" maxlength="2000" required></textarea><div class="form-actions"><button type="button" data-act="close-modal" class="btn light">Close</button><button class="btn">Post comment</button></div></form>'))
 }
 
-function parseCsv(text){let rows=[],row=[],v='',quoted=false;for(let i=0;i<text.length;i++){let c=text[i];if(c==='"'){if(quoted&&text[i+1]==='"'){v+='"';i++}else quoted=!quoted}else if(c===','&&!quoted){row.push(v);v=''}else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&text[i+1]==='\n')i++;row.push(v);if(row.some(x=>x.trim()))rows.push(row);row=[];v=''}else v+=c}row.push(v);if(row.some(x=>x.trim()))rows.push(row);if(quoted)throw Error('CSV contains an unclosed quote');let header=rows.shift()?.map(s=>s.replace(/^\uFEFF/,'').trim().toLowerCase().replace(/[^a-z0-9]/g,''))||[];function pick(r,aliases){for(let a of aliases){let j=header.indexOf(a);if(j>=0)return String(r[j]||'').trim()}return ''}return rows.map(r=>({capid:pick(r,['capid','memberid']),name:pick(r,['name','fullname','membername','member']),email:pick(r,['email','primaryemail','emailaddress']),kind:(function(){let k=pick(r,['kind','type','membertype','category','status']).toLowerCase();return k.includes('senior')||k==='sm'?'senior':'cadet'})(),unit:pick(r,['unit','unitid','unitnumber','charternumber']),unit_name:pick(r,['unitname','squadron','squadronname']),parent_email:pick(r,['parentemail','parentsemail','guardianemail']),active:!['false','0','inactive','expired'].includes(pick(r,['active','membershipactive']).toLowerCase())})).filter(r=>r.capid)}
+
+function normalizedKey(k){return String(k||'').replace(/^\uFEFF/,'').toLowerCase().replace(/[^a-z0-9]/g,'')}
+function parseDelimited(text,filename){
+ let first=text.split(/\r?\n/).find(line=>line.trim())||'';
+ const scores=[',','\t','|',';'].map(d=>({d,n:first.split(d).length-1})).sort((a,b)=>b.n-a.n);
+ const sep=scores[0].d;
+ if(scores[0].n===0)throw Error(filename+': Could not detect delimited columns');
+ let rows=[],row=[],cell='',quoted=false;
+ for(let i=0;i<text.length;i++){
+  let c=text[i];
+  if(c==='"'){if(quoted&&text[i+1]==='"'){cell+='"';i++}else quoted=!quoted}
+  else if(c===sep&&!quoted){row.push(cell);cell=''}
+  else if((c==='\n'||c==='\r')&&!quoted){
+   if(c==='\r'&&text[i+1]==='\n')i++;
+   row.push(cell);if(row.some(x=>x.trim()))rows.push(row);row=[];cell='';
+  }else cell+=c;
+ }
+ row.push(cell);if(row.some(x=>x.trim()))rows.push(row);
+ if(quoted)throw Error(filename+': Unclosed quoted value');
+ const header=(rows.shift()||[]).map(normalizedKey);
+ if(!header.length||!header.includes('capid')&&!header.includes('orgid')&&!header.includes('memberid')){
+  return {filename,header,rows:[],unsupported:true,reason:'No CAPID or ORGID column'};
+ }
+ const records=rows.map(arr=>Object.fromEntries(header.map((h,i)=>[h,String(arr[i]||'').trim()])));
+ return {filename,header,rows:records,unsupported:false};
+}
+function getField(row,aliases){
+ for(let alias of aliases){let key=normalizedKey(alias);if(row[key])return row[key].trim()}
+ return '';
+}
+function nameParts(row){
+ let first=getField(row,['NameFirst','FirstName','First','GivenName']);
+ let last=getField(row,['NameLast','LastName','Last','Surname']);
+ const full=getField(row,['Name','FullName','MemberName']);
+ if((!first||!last)&&full.includes(',')){
+  const bits=full.split(',');last=last||bits[0].trim();first=first||bits.slice(1).join(',').trim().split(' ')[0];
+ }
+ return {first,last};
+}
+function memberKind(value,grade){
+ const v=String(value||'').toLowerCase().replace(/[\s_/-]+/g,'');
+ if(['cadet','cad','c','cd','1'].includes(v)||v.includes('cadet'))return 'cadet';
+ if(['senior','sen','sm','s','2','adult'].includes(v)||v.includes('senior'))return 'senior';
+ if(/^c[\/-]/i.test(grade)||/^cadet/i.test(grade))return 'cadet';
+ if(grade&&!/^c[\/-]/i.test(grade))return 'senior';
+ return '';
+}
+function validEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)}
+async function prepareCapwatch(files){
+ const chosen=Array.from(files);
+ if(!chosen.length)throw Error('Choose at least one CAPWATCH .txt or .csv file');
+ if(chosen.length>50)throw Error('Limit selection to 50 extracted files');
+ const decoded=[];
+ for(const file of chosen){
+  if(!/\.(txt|csv)$/i.test(file.name))throw Error(file.name+' is not a TXT or CSV file. Extract ZIP files first.');
+  if(file.size>30*1024*1024)throw Error(file.name+' is larger than 30 MB');
+  const buf=await file.arrayBuffer(),bytes=new Uint8Array(buf);
+  let text=bytes[0]===255&&bytes[1]===254?new TextDecoder('utf-16le').decode(buf):
+           bytes[0]===254&&bytes[1]===255?new TextDecoder('utf-16be').decode(buf):new TextDecoder('utf-8').decode(buf);
+  decoded.push(parseDelimited(text,file.name));
+ }
+ const members=new Map(),orgs=new Map(),contacts=[],recognized=[],ignored=[];
+ for(const f of decoded){
+  const h=f.header,has=k=>h.includes(k);
+  const memberFile=(has('capid')||has('memberid'))&&
+   (['namefirst','firstname','namelast','lastname','fullname','membername','name'].some(has))&&
+   (['rank','grade','curgrade','namefirst','firstname','kind','membertype'].some(has));
+  const contactFile=(has('capid')||has('memberid'))&&
+   (['contact','value','contactvalue','email','emailaddress','parentemail'].some(has))&&!memberFile;
+  const orgFile=has('orgid')&&(has('charter')||has('charternumber')||has('name')||has('unitname'))&&!memberFile;
+  if(memberFile){
+   recognized.push(f.filename+' — member roster ('+f.rows.length+')');
+   for(const row of f.rows){
+    const id=getField(row,['CAPID','MemberID']);if(!id)continue;
+    if(members.has(id))throw Error('CAPID '+id+' occurs more than once in selected membership records. Remove duplicate roster files.');
+    const names=nameParts(row),grade=getField(row,['Grade','Rank','CurGrade','GradeName']);
+    const kind=memberKind(getField(row,['Kind','MemberType','Type','MemberCategory']),grade);
+    let rawParent=getField(row,['ParentEmail','Parent1Email','Parent2Email','GuardianEmail']);
+    const unit=getField(row,['Unit','UnitID','CharterNumber','ORGID','OrganizationID']);
+    const status=getField(row,['Active','MembershipActive','MembershipStatus']);
+    members.set(id,{
+      capid:id,first_name:names.first,last_name:names.last,grade,kind,unit,
+      unit_name:getField(row,['UnitName','SquadronName','OrganizationName']),
+      email:getField(row,['PrimaryEmail','Email','EmailAddress','EmailPrimary']).toLowerCase(),
+      parent_email:rawParent,active:!['false','0','inactive','expired','terminated'].includes(status.toLowerCase())
+    });
+   }
+  }else if(contactFile){recognized.push(f.filename+' — contacts ('+f.rows.length+')');contacts.push(...f.rows)}
+  else if(orgFile){
+   recognized.push(f.filename+' — organizations ('+f.rows.length+')');
+   for(const row of f.rows){const id=getField(row,['ORGID','OrganizationID']);if(!id)continue;
+    orgs.set(id,{unit:getField(row,['CharterNumber','Charter','UnitID'])||id,
+      name:getField(row,['Name','UnitName','OrganizationName'])||id})}
+  }else ignored.push(f.filename+' — '+(f.reason||'not needed for roster matching'));
+ }
+ if(!members.size)throw Error('No member roster was found. Select the CAPWATCH file containing CAPID, first name, last name and grade.');
+ for(const row of contacts){
+  const id=getField(row,['CAPID','MemberID']),member=members.get(id);
+  if(!member)continue;
+  const kind=getField(row,['Type','ContactType','ContactName','Category']).toLowerCase().replace(/[^a-z]/g,'');
+  const address=getField(row,['Contact','ContactValue','Value','Email','EmailAddress','ParentEmail']);
+  if(!validEmail(address))continue;
+  if(kind.includes('parent')||kind.includes('guardian')) {
+   const old=member.parent_email?member.parent_email.split(/[;,]/).map(x=>x.trim()):[];
+   if(!old.some(x=>x.toLowerCase()===address.toLowerCase()))old.push(address);
+   member.parent_email=old.join(';');
+  }else if(!member.email&&(['email','primaryemail','emailaddress','memberemail',''].includes(kind))){
+   member.email=address.toLowerCase();
+  }
+ }
+ let rows=[...members.values()],issues=[];
+ for(const r of rows){
+  const org=orgs.get(r.unit);
+  if(org){r.unit=org.unit;r.unit_name=org.name}
+  r.unit=r.unit.trim();r.grade=r.grade.trim();r.first_name=r.first_name.trim();r.last_name=r.last_name.trim();
+  if(!/^\d{1,10}$/.test(r.capid))issues.push('Invalid CAPID '+r.capid);
+  if(!r.first_name||!r.last_name)issues.push('CAPID '+r.capid+': missing first/last name');
+  if(!r.grade)issues.push('CAPID '+r.capid+': missing grade');
+  if(!r.kind)issues.push('CAPID '+r.capid+': cannot determine cadet/senior');
+  if(!r.unit)issues.push('CAPID '+r.capid+': missing unit/ORGID');
+  if(!validEmail(r.email))issues.push('CAPID '+r.capid+': missing or invalid primary email');
+  const parents=String(r.parent_email||'').split(/[;,]/).map(x=>x.trim()).filter(Boolean);
+  if(parents.some(x=>!validEmail(x)))issues.push('CAPID '+r.capid+': invalid parent email');
+ }
+ if(rows.length>10000)issues.push('Roster exceeds 10,000 members');
+ return {rows,issues,recognized,ignored,files:chosen.map(f=>f.name)};
+}
+function capwatchReview(candidate,full){
+ state.importCandidate={...candidate,full};
+ let {rows,issues,recognized,ignored}=candidate;
+ const safe=issues.length===0;
+ modal('<h2>CAPWATCH import review</h2><p class="subtitle">Nothing has been uploaded. Review how the files matched before importing.</p>'+
+ '<div class="info"><strong>'+rows.length+' members</strong> from '+recognized.length+' relevant extract(s).'+(full?' <strong>Full snapshot: absent members in included units may be disabled.</strong>':' Partial import: no absent members deactivated.')+'</div>'+
+ '<div class="label">Matched files</div><div class="hint">'+(recognized.map(esc).join('<br>')||'None')+'</div>'+
+ (ignored.length?'<div class="label">Ignored files</div><div class="hint">'+ignored.map(esc).join('<br>')+'</div>':'')+
+ '<div class="label">Validation</div>'+(safe?'<p class="hint">All required fields have values. This checks structure, not independent CAPWATCH accuracy.</p>':
+ '<div class="info warning"><strong>Import blocked — '+issues.length+' issue(s)</strong><p>'+issues.slice(0,14).map(esc).join('<br>')+(issues.length>14?'<br>… and '+(issues.length-14)+' more':'')+'</p></div>')+
+ '<div class="label">Sample (first five)</div><div style="max-height:230px;overflow:auto">'+rows.slice(0,5).map(r=>'<div class="choice"><div><strong>'+esc([r.grade,r.last_name+', '+r.first_name].join(' '))+'</strong><div class="hint">'+esc(r.capid)+' • '+esc(r.unit)+' • '+esc(r.kind)+' • '+esc(r.email)+'</div></div></div>').join('')+'</div>'+
+ '<div class="form-actions"><button data-act="close-modal" class="btn light">Cancel</button>'+
+ (safe?'<button data-act="import-commit" class="btn">Confirm import of '+rows.length+' members</button>':'')+'</div>')
+}
+
 document.addEventListener('click',async function(ev){let a=ev.target.closest('[data-act],[data-tab],[data-thread],[data-board],[data-post],[data-file],[data-approve],[data-disable],[data-reactivate],[data-toggleadmin]');if(!a)return;
 if(a.closest('.modal')&&a.dataset.act==='close-modal'){closeModal();return}if(a.dataset.act==='close-modal'&&ev.target===a){closeModal();return}if(a.dataset.tab){setTab(a.dataset.tab);return}
 try{

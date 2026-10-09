@@ -50,6 +50,21 @@ Mapping:
 
 The tool performs column and contact-type validation and provides a preview. It has been verified with **synthetic rows using the exact published header layouts**, not with the user's actual CAPWATCH export bytes. Confirm the preview against a real extract before committing a full snapshot.
 
+
+## CAPWATCH Contacts and multi-unit permissions (October 9, 2026)
+
+- The **Contacts** tab displays all active imported members in the selected unit, even if they have not registered for Messenger. It uses the pre-existing \`msg_members\` records created by the CAPWATCH import; no duplicate identities or authentication accounts are fabricated.
+- Display names use \`Grade Last, First\` and show the member's CAPID and \`CAPWATCH only\` / \`Messenger active\` status. Contact search and Cadet/Senior filters are available.
+- A roster-only member has no Messenger account and cannot yet receive a message. A \`Message\` action is offered only for an approved, registered user when the sender is in their own home unit, with the existing server-enforced conversation safety rules.
+- A member sees their own CAPWATCH unit. The platform administrator can switch among all imported units. Unit Admins may receive additional access to units they do not belong to in CAPWATCH.
+- **Administration → Other units** appears for verified Unit Admins to the platform administrator. The application administrator can grant or revoke each additional unit using an independent permission table.
+- The selected unit is a separately saved user preference; changing it does **not** change the account's CAPWATCH home unit.
+- Additional-unit admin permissions permit roster views, unit bulletin boards, unit requests, and default unit group chats, subject to RLS. They **do not** automatically grant access to members' unrelated private/direct conversations or create cross-unit private-chat participation. New direct chats are currently limited to a user's home unit.
+- Extra permissions are enforced on the server. Removing a Unit Admin role, disabling the account, or removing an extra unit grant revokes that scope; demotion/disable also discards stored extra grants.
+- Parents do not see other cadets' full unit roster entries through Contacts; they see their own linked cadets and eligible senior members.
+- Current Supabase development project had **zero committed** \`msg_members\` roster records during this change. The CAPWATCH preview alone does not save members: review, then click **Confirm** in the importer to populate Contacts.
+- Tests of unit permissions and parent contact restrictions were performed inside rolled-back SQL transactions. Full interactive browser sign-in testing remains outstanding.
+
 ## First setup/test
 
 1. Open the site and sign in with the **existing application administrator account** from the old Uniform Inspections Supabase project. It has been granted Messenger platform administrator access. Don't post real member data yet.

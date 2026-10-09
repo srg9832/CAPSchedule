@@ -10,7 +10,7 @@ This is a standalone web/PWA application in the `/messenger/` folder of the CAP 
 
 - Sign in / sign up with Supabase email/password and email confirmation; registration must match an imported CAPWATCH member or guardian email, then be approved by a unit admin.
 - Existing authorized application administrator account has been initialized using the former Uniform Inspections admin email.
-- CSV CAPWATCH roster import; optional **complete snapshot** mode disables members who vanish from included units (with a shrinkage safety check).
+- Multi-file TXT/CSV CAPWATCH roster import, joined by CAPID with validation preview; optional **complete snapshot** mode disables members who vanish from included units (with a shrinkage safety check).
 - Unit administrator verification and local deactivation, unaffected by future roster imports.
 - Four auto-created squadron groups: All Members, Seniors, Cadets, Parents & Senior Members.
 - Direct and custom chats with server-enforced participant rules. Senior–cadet direct chats are blocked; cadet–cadet, senior–senior and parent–senior direct chats permitted; parents can only message their own cadet directly. Mixed senior/cadet custom groups require two senior members. Multiple parents cannot form private groups.
@@ -25,7 +25,7 @@ This is a standalone web/PWA application in the `/messenger/` folder of the CAP 
 
 1. Open the site and sign in with the **existing application administrator account** from the old Uniform Inspections Supabase project. It has been granted Messenger platform administrator access. Don't post real member data yet.
 2. In Supabase Dashboard → **Authentication → URL Configuration**, add `https://srg9832.github.io/CAPSchedule/messenger/` to the redirect allow list and consider setting it as the Site URL now that the old inspection app has been migrated. This connection cannot modify Auth URL settings automatically.
-3. In Messenger → Administration → Import CAPWATCH, use a CSV with these exact columns: `CAPID,Name,Email,Kind,Unit,Unit Name,Parent Email,Active`. Use `senior` or `cadet` in Kind, and `true` or `false` in Active.
+3. In Messenger → Administration → Import CAPWATCH, use a CSV with these columns: `CAPID,First Name,Last Name,Grade,Email,Kind,Unit,Unit Name,Parent Email,Active`. Use `senior` or `cadet` in Kind, and `true` or `false` in Active.
 4. Do a **partial** import first to establish member records without deactivating anybody. Only check full snapshot after confirming the extract is complete for every included unit.
 5. Approved/verified member emails can then sign up, confirm their emails, and retry registration. The platform admin or assigned unit administrator reviews them in Administration.
 6. Use the squadron selector at the top of the app to operate in a unit.
@@ -58,3 +58,13 @@ Text lives in `msg_messages` / `msg_posts`, request queues in `msg_requests`, an
 4. Build push delivery and quiet-hour enforcement (9 PM–8 AM mandatory for cadets).
 5. Implement restricted, reviewable AI weekly operations overview and safety incident workflow.
 6. Package Android/iPhone builds only after mobile web testing.
+
+
+## Member names, photos and removal behavior (October 2026)
+
+- Grade and first/last names come from imported CAPWATCH data; the display format is `Grade Last, First`. Members cannot edit their own imported grade or name.
+- A member may upload an optional profile photo in Settings. The browser resizes/crops it to 256×256 JPEG and strips embedded image metadata by re-encoding. Photos use a private Supabase Storage bucket; absent photos use initials. Old photos are no longer readable by normal clients after replacement/removal, but still require eventual storage cleanup.
+- Members may edit or remove their own messages. Unit administrators may remove messages from their units; the application administrator may remove any accessible conversation message. Original text stays in RLS-protected, non-client-readable revision tables. Bulletin posts and comments can be removed by their authors or eligible administrators.
+- Application administrator accounts are protected against deactivation or demotion through both the web UI and a database trigger. Intentional removal requires separate privileged database maintenance.
+- Unit admins can change mandatory cadet quiet hours. All users can save additional quiet periods that expire automatically. **Notifications are not yet implemented**, so these preferences don't currently silence any active push service.
+- CAPWATCH import accepts multiple extracted `.txt` / `.csv` files selected together and matches member/contact/organization rows by CAPID or ORGID where recognizable. It does not currently accept raw ZIP files. Unknown extract layouts are not guaranteed. Review unmatched or incomplete records before importing; contact and parent email fields must be present in the source.

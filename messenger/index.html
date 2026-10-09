@@ -234,6 +234,27 @@ const r=await db.from('msg_messages').insert(payload).select('id').single();if(r
 async function flushOutbox(){if(!state.user||!navigator.onLine)return;const k='capmsg-outbox-'+state.user.id;const q=JSON.parse(localStorage.getItem(k)||'[]');if(!q.length)return;let remaining=[];for(let i=0;i<q.length;i++){try{let m=q[i];if(Date.now()-m.queued_at>86400000)continue;let r=await db.from('msg_messages').insert({id:m.id||crypto.randomUUID(),thread_id:m.thread_id,sender_id:state.user.id,body:m.body});if(r.error&&r.error.code!=='23505')throw r.error}catch(e){remaining=q.slice(i);break}}localStorage.setItem(k,JSON.stringify(remaining));if(!remaining.length)toast('Queued messages sent');if(state.activeThread)await loadMessages()}
 function modal(inner){document.getElementById('overlay').innerHTML='<div class="modal-bg" data-act="close-modal"><div class="modal" role="dialog" aria-modal="true">'+inner+'</div></div>'}
 function closeModal(){document.getElementById('overlay').innerHTML=''}
+
+async function editUnitAccess(id){
+ if(!state.profile.platform_admin)return;
+ const admin=state.adminAccounts.find(a=>a.user_id===id);
+ if(!admin||!admin.unit_admin||admin.platform_admin)throw Error('This account must first be an approved Unit Admin');
+ const r=await db.rpc('msg_admin_unit_grants',{p_user:id});
+ if(r.error)throw r.error;
+ const granted=new Set((r.data||[]).map(x=>x.unit_id));
+ state.accessTarget=id;
+ const options=state.units.filter(u=>u.id!==admin.unit_id&&u.id!=='DEV-ADMIN');
+ modal('<h2>Additional unit permissions</h2><p class="subtitle">'+
+ esc(admin.display_name)+' has automatic access to their CAPWATCH home unit. Additional unit access is independent of CAPWATCH assignments and can be revoked at any time.</p>'+
+ '<div class="info"><strong>Home unit:</strong> '+esc(state.units.find(u=>u.id===admin.unit_id)?.name||admin.unit_id)+
+ '<br><strong>Role:</strong> Unit Administrator</div>'+
+ '<div style="max-height:350px;overflow:auto;margin-top:15px">'+
+ (options.length?options.map(u=>'<label class="choice"><input type="checkbox" data-unit-grant="'+esc(u.id)+'" '+
+ (granted.has(u.id)?'checked':'')+'><span>'+esc(u.name)+' <small class="hint">('+esc(u.id)+')</small></span></label>').join(''):
+ '<p class="hint">No other CAPWATCH units imported yet.</p>')+'</div>'+
+ '<p class="hint">Changes save immediately. These permissions allow unit administration and default-group moderation in the assigned units; they do not automatically expose unrelated private conversations.</p>'+
+ '<div class="form-actions"><button class="btn" data-act="close-modal">Done</button></div>');
+}
 function newChat(){if(state.activeUnitId!==state.profile.unit_id)return toast('Private conversations can only be initiated in your CAPWATCH home unit. Use the assigned unit groups and bulletin boards for additional units.');let candidates=state.users.filter(u=>u.user_id!==state.user.id&&u.approved&&!u.disabled&&u.unit_id===state.activeUnitId);modal('<h2>New conversation</h2><p class="subtitle">Select participants. Chat rules are checked securely by the server before a conversation can be created.</p><form id="chat-form"><div class="label">Group name (optional)</div><input class="field" name="title" placeholder="Activity coordination"><div class="label">Participants</div><div style="max-height:270px;overflow:auto">'+candidates.map(u=>'<label class="choice"><input type="checkbox" name="person" value="'+u.user_id+'"><span><strong>'+esc(u.display_name)+'</strong> <small class="muted">('+esc(u.kind)+')</small></span></label>').join('')+'</div><p class="hint">Cadet–cadet and senior–senior direct chats are allowed. Mixed senior/cadet groups require two senior members. Parent messaging is restricted.</p><div class="form-actions"><button type="button" data-act="close-modal" class="btn light">Cancel</button><button class="btn" type="submit">Create conversation</button></div></form>')}
 function newPost(){modal('<h2>New bulletin post</h2><form id="post-form"><label class="label">Title</label><input name="title" class="field" maxlength="180" required><label class="label">Message</label><textarea name="body" rows="6" maxlength="8000" class="field" required></textarea><p class="hint">Visible only to the audience of the selected board.</p><div class="form-actions"><button type="button" data-act="close-modal" class="btn light">Cancel</button><button type="submit" class="btn">Publish post</button></div></form>')}
 function newRequest(){modal('<h2>Request service</h2><p class="subtitle">Requests appear in submission order and can be cleared by your unit staff.</p><form id="request-form"><label class="label">Request type</label><select class="field" name="kind"><option value="drill">Drill Test</option><option value="leadership">Leadership Feedback Review</option></select><label class="label">Notes (optional)</label><textarea class="field" maxlength="400" name="note" rows="3"></textarea><div class="form-actions"><button type="button" data-act="close-modal" class="btn light">Cancel</button><button class="btn" type="submit">Submit request</button></div></form>')}
@@ -428,9 +449,23 @@ function capwatchReview(candidate,full){
  '</div>');
 }
 
-document.addEventListener('click',async function(ev){let a=ev.target.closest('[data-act],[data-tab],[data-thread],[data-board],[data-post],[data-file],[data-approve],[data-disable],[data-reactivate],[data-toggleadmin],[data-editmsg],[data-removemsg],[data-removepost],[data-removecomment]');if(!a)return;
+document.addEventListener('click',async function(ev){let a=ev.target.closest('[data-act],[data-tab],[data-thread],[data-board],[data-post],[data-file],[data-approve],[data-disable],[data-reactivate],[data-toggleadmin],[data-editmsg],[data-removemsg],[data-removepost],[data-removecomment],[data-access],[data-contact-user]');if(!a)return;
 if(a.closest('.modal')&&a.dataset.act==='close-modal'){closeModal();return}if(a.dataset.act==='close-modal'&&ev.target===a){closeModal();return}if(a.dataset.tab){setTab(a.dataset.tab);return}
 try{
+
+if(a.dataset.access){await editUnitAccess(a.dataset.access);return}
+if(a.dataset.contactUser){
+ if(state.activeUnitId!==state.profile.unit_id)return toast('Direct messaging is limited to your home unit.');
+ const id=a.dataset.contactUser;
+ const target=state.users.find(u=>u.user_id===id);
+ if(!target||!target.approved||target.disabled)throw Error('This member has no approved Messenger account');
+ const r=await db.rpc('msg_start_thread',{p_users:[id],p_title:''});
+ if(r.error)throw r.error;
+ state.tab='chats';
+ await refreshTab();
+ await readThread(r.data);
+ return;
+}
 if(a.dataset.thread){await readThread(a.dataset.thread);return}
 if(a.dataset.board){state.board=a.dataset.board;render();return}
 if(a.dataset.post){await showComments(a.dataset.post);return}
@@ -524,7 +559,28 @@ if(f.id==='request-form'){let r=await db.from('msg_requests').insert({user_id:st
 if(f.id==='quiet-form'){let start=f.elements.namedItem('start').value;let end=f.elements.namedItem('end').value;if(start!==''&&end==='')throw Error('Choose an end time');let hours=Number(f.elements.namedItem('hours').value);let r=await db.from('msg_quiet').upsert({user_id:state.user.id,extra_start:start===''?null:Number(start),extra_end:start===''?null:Number(end),extra_until:start===''?null:new Date(Date.now()+hours*3600000).toISOString()});if(r.error)throw r.error;toast('Quiet-hour preference saved')}
 if(f.id==='import-form'){const files=f.elements.namedItem('files').files;const result=await prepareCapwatch(files);capwatchReview(result,f.elements.namedItem('full').checked)}
 }catch(e){err(e)}finally{if(b)b.disabled=false}});
-document.addEventListener('change',async function(ev){let s=ev.target;if(s.id==='admin-unit-selector'){try{let r=await db.rpc('msg_switch_unit',{p_unit:s.value});if(r.error)throw r.error;state.activeThread=null;state.messages=[];await init();toast('Active squadron changed')}catch(e){err(e)}return}if(s.dataset.request){try{let status=s.value;let r=await db.from('msg_requests').update({status,updated_at:new Date().toISOString(),completed_at:status==='completed'?new Date().toISOString():null}).eq('id',s.dataset.request);if(r.error)throw r.error;toast('Request updated');await refreshTab()}catch(e){err(e)}}if(s.id==='file-input'&&s.files.length){let c=document.querySelector('#send-form textarea');if(c&&!c.value.trim())c.value='📎 '+s.files[0].name}});
+document.addEventListener('change',async function(ev){let s=ev.target;if(s.id==='admin-unit-selector'){
+ const old=state.activeUnitId;
+ try{
+  const r=await db.rpc('msg_switch_unit',{p_unit:s.value});
+  if(r.error)throw r.error;
+  state.activeThread=null;state.messages=[];state.files=[];state.roster=[];
+  if(state.subscription){await db.removeChannel(state.subscription);state.subscription=null}
+  await loadBase();await refreshTab();toast('Viewing '+(state.unit?.name||s.value));
+ }catch(e){s.value=old;err(e)}
+ return;
+}
+if(s.dataset.unitGrant){
+ const target=state.accessTarget,unit=s.dataset.unitGrant,enabled=s.checked;
+ s.disabled=true;
+ try{
+  const r=await db.rpc('msg_set_unit_grant',{p_user:target,p_unit:unit,p_enabled:enabled});
+  if(r.error)throw r.error;
+  toast((enabled?'Access granted for ':'Access removed from ')+(state.units.find(u=>u.id===unit)?.name||unit));
+ }catch(e){s.checked=!enabled;err(e)}
+ finally{s.disabled=false}
+ return;
+}if(s.dataset.request){try{let status=s.value;let r=await db.from('msg_requests').update({status,updated_at:new Date().toISOString(),completed_at:status==='completed'?new Date().toISOString():null}).eq('id',s.dataset.request);if(r.error)throw r.error;toast('Request updated');await refreshTab()}catch(e){err(e)}}if(s.id==='file-input'&&s.files.length){let c=document.querySelector('#send-form textarea');if(c&&!c.value.trim())c.value='📎 '+s.files[0].name}});
 window.addEventListener('online',()=>{state.online=true;flushOutbox()});window.addEventListener('offline',()=>{state.online=false;toast('Offline mode — messages will be queued')});
 db.auth.onAuthStateChange(function(event){if(event==='SIGNED_OUT'){state.user=null;state.profile=null;render()}});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);try{await init();await flushOutbox()}catch(e){console.error(e);root.innerHTML='<div class="center-screen"><div class="card pad"><h2>Unable to open the application</h2><p>'+esc(e.message)+'</p><button class="btn" onclick="location.reload()">Retry</button></div></div>'}

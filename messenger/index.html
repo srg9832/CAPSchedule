@@ -108,7 +108,7 @@ return '<div class="grid"><div class="card pad" style="grid-column:1/-1"><h2 cla
 (ac||'<p class="muted">No accounts registered yet.</p>')+'</div>'+
 '<div class="card pad"><h2 class="headline">Mandatory cadet quiet hours</h2><p class="subtitle">Set squadron quiet hours (local time). Cadets may only add more quiet hours, never shorten these.</p><form id="unit-quiet-form"><label class="label">From</label><select class="field" name="start">'+hourOpts(q.cadet_quiet_start)+'</select><label class="label">Until</label><select class="field" name="end">'+hourOpts(q.cadet_quiet_end)+'</select><button class="btn" type="submit" style="margin-top:14px">Save squadron setting</button></form><p class="hint" style="margin-top:10px">Push delivery is not implemented yet. This configuration will govern notifications once delivery is built.</p></div>'+
 (state.profile.platform_admin?
-'<div class="card pad"><h2 class="headline">Import CAPWATCH files</h2><p class="subtitle">Select multiple extracted CAPWATCH .txt/.csv files together. Records are joined by CAPID, reviewed on this device, then uploaded as a normalized roster. Unknown files are ignored.</p><form id="import-form"><input class="field" type="file" name="files" accept=".csv,.txt,text/csv,text/plain" multiple required><label class="choice" style="border:0"><input type="checkbox" name="full"> Full validated snapshot — deactivate missing members in included units</label><button class="btn" type="submit">Review selected files</button></form><p class="hint">Only the normalized member roster is uploaded; selected source files are not uploaded as-is.</p></div>':'')+
+'<div class="card pad"><h2 class="headline">Import CAPWATCH files</h2><p class="subtitle">Select Member.txt and MbrContact.txt (or MbrContacts.txt). Use Ctrl-click to select both, or select all CAPWATCH .txt files; the importer ignores unrelated extracts. It joins them by CAPID, uses EMAIL PRIMARY then SECONDARY for login, and CADET PARENT EMAIL for guardian access.</p><form id="import-form"><input class="field" type="file" name="files" accept=".csv,.txt,text/csv,text/plain" multiple required><label class="choice" style="border:0"><input type="checkbox" name="full"> Full validated snapshot — deactivate missing members in included units</label><button class="btn" type="submit">Review selected files</button></form><p class="hint">Only the normalized member roster is uploaded; selected source files are not uploaded as-is.</p></div>':'')+
 '<div class="card pad"><h2 class="headline">Weekly review</h2><p class="subtitle">AI overview and safety escalation are planned. No automated analysis is active in this prototype.</p><div class="info">Message and post removals retain administrative history while hiding original content from regular readers.</div></div></div>'
 }
 
@@ -163,145 +163,179 @@ modal('<h2>'+esc(p.title)+'</h2><p class="subtitle">'+esc(p.body)+'</p><div styl
 }
 
 
-function normalizedKey(k){return String(k||'').replace(/^\uFEFF/,'').toLowerCase().replace(/[^a-z0-9]/g,'')}
+
+function normalizedKey(k){return String(k||'').replace(/^\uFEFF/,'').trim().toLowerCase().replace(/[^a-z0-9]/g,'')}
 function parseDelimited(text,filename){
- let first=text.split(/\r?\n/).find(line=>line.trim())||'';
+ const first=text.split(/\r?\n/).find(line=>line.trim())||'';
  const scores=[',','\t','|',';'].map(d=>({d,n:first.split(d).length-1})).sort((a,b)=>b.n-a.n);
  const sep=scores[0].d;
- if(scores[0].n===0)throw Error(filename+': Could not detect delimited columns');
- let rows=[],row=[],cell='',quoted=false;
+ if(scores[0].n===0)throw Error(filename+': Could not detect a delimited header line.');
+ const rows=[];let row=[],cell='',quoted=false;
  for(let i=0;i<text.length;i++){
-  let c=text[i];
+  const c=text[i];
   if(c==='"'){if(quoted&&text[i+1]==='"'){cell+='"';i++}else quoted=!quoted}
   else if(c===sep&&!quoted){row.push(cell);cell=''}
   else if((c==='\n'||c==='\r')&&!quoted){
    if(c==='\r'&&text[i+1]==='\n')i++;
-   row.push(cell);if(row.some(x=>x.trim()))rows.push(row);row=[];cell='';
+   row.push(cell);if(row.some(v=>v.trim()))rows.push(row);row=[];cell='';
   }else cell+=c;
  }
- row.push(cell);if(row.some(x=>x.trim()))rows.push(row);
+ row.push(cell);if(row.some(v=>v.trim()))rows.push(row);
  if(quoted)throw Error(filename+': Unclosed quoted value');
  const header=(rows.shift()||[]).map(normalizedKey);
- if(!header.length||!header.includes('capid')&&!header.includes('orgid')&&!header.includes('memberid')){
-  return {filename,header,rows:[],unsupported:true,reason:'No CAPID or ORGID column'};
- }
- const records=rows.map(arr=>Object.fromEntries(header.map((h,i)=>[h,String(arr[i]||'').trim()])));
- return {filename,header,rows:records,unsupported:false};
+ if(header.length!==new Set(header).size)throw Error(filename+': Duplicate column headings');
+ return {filename,header,rows:rows.map(arr=>Object.fromEntries(header.map((h,i)=>[h,String(arr[i]||'').trim()])))};
 }
-function getField(row,aliases){
- for(let alias of aliases){let key=normalizedKey(alias);if(row[key])return row[key].trim()}
+function getField(row,aliases){for(const name of aliases){const v=row[normalizedKey(name)];if(v!==undefined&&String(v).trim())return String(v).trim()}return ''}
+function validEmail(v){return /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(String(v||'').trim())}
+function memberKind(v){
+ const kind=String(v||'').trim().toUpperCase().replace(/[\s_-]+/g,'');
+ if(kind==='CADET'||kind==='CDT'||kind==='C')return 'cadet';
+ if(kind==='SENIOR'||kind==='SENIORMEMBER'||kind==='SM'||kind==='S')return 'senior';
  return '';
 }
-function nameParts(row){
- let first=getField(row,['NameFirst','FirstName','First','GivenName']);
- let last=getField(row,['NameLast','LastName','Last','Surname']);
- const full=getField(row,['Name','FullName','MemberName']);
- if((!first||!last)&&full.includes(',')){
-  const bits=full.split(',');last=last||bits[0].trim();first=first||bits.slice(1).join(',').trim().split(' ')[0];
- }
- return {first,last};
+function optedOut(v){return ['TRUE','YES','Y','1','T'].includes(String(v||'').trim().toUpperCase())}
+function contactPriority(v){
+ const p=String(v||'').trim().toUpperCase();
+ return p==='PRIMARY'?0:p==='SECONDARY'?1:p==='EMERGENCY'?2:3;
 }
-function memberKind(value,grade){
- const v=String(value||'').toLowerCase().replace(/[\s_/-]+/g,'');
- if(['cadet','cad','c','cd','1'].includes(v)||v.includes('cadet'))return 'cadet';
- if(['senior','sen','sm','s','2','adult'].includes(v)||v.includes('senior'))return 'senior';
- if(/^c[\/-]/i.test(grade)||/^cadet/i.test(grade))return 'cadet';
- if(grade&&!/^c[\/-]/i.test(grade))return 'senior';
- return '';
+function decodeCapwatch(buffer){
+ const bytes=new Uint8Array(buffer);
+ if(bytes[0]===255&&bytes[1]===254)return new TextDecoder('utf-16le').decode(buffer);
+ if(bytes[0]===254&&bytes[1]===255)return new TextDecoder('utf-16be').decode(buffer);
+ try{return new TextDecoder('utf-8',{fatal:true}).decode(buffer)}
+ catch(e){return new TextDecoder('windows-1252').decode(buffer)}
 }
-function validEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)}
 async function prepareCapwatch(files){
  const chosen=Array.from(files);
- if(!chosen.length)throw Error('Choose at least one CAPWATCH .txt or .csv file');
- if(chosen.length>50)throw Error('Limit selection to 50 extracted files');
- const decoded=[];
+ if(!chosen.length)throw Error('Select Member.txt and MbrContact.txt together');
+ if(chosen.length>50)throw Error('Select no more than 50 files');
+ const recognized=[],ignored=[],issues=[],warnings=[];
+ let memberFile=null,contactFile=null;
  for(const file of chosen){
-  if(!/\.(txt|csv)$/i.test(file.name))throw Error(file.name+' is not a TXT or CSV file. Extract ZIP files first.');
-  if(file.size>30*1024*1024)throw Error(file.name+' is larger than 30 MB');
-  const buf=await file.arrayBuffer(),bytes=new Uint8Array(buf);
-  let text=bytes[0]===255&&bytes[1]===254?new TextDecoder('utf-16le').decode(buf):
-           bytes[0]===254&&bytes[1]===255?new TextDecoder('utf-16be').decode(buf):new TextDecoder('utf-8').decode(buf);
-  decoded.push(parseDelimited(text,file.name));
- }
- const members=new Map(),orgs=new Map(),contacts=[],recognized=[],ignored=[];
- for(const f of decoded){
-  const h=f.header,has=k=>h.includes(k);
-  const memberFile=(has('capid')||has('memberid'))&&
-   (['namefirst','firstname','namelast','lastname','fullname','membername','name'].some(has))&&
-   (['rank','grade','curgrade','namefirst','firstname','kind','membertype'].some(has));
-  const contactFile=(has('capid')||has('memberid'))&&
-   (['contact','value','contactvalue','email','emailaddress','parentemail'].some(has))&&!memberFile;
-  const orgFile=has('orgid')&&(has('charter')||has('charternumber')||has('name')||has('unitname'))&&!memberFile;
-  if(memberFile){
-   recognized.push(f.filename+' — member roster ('+f.rows.length+')');
-   for(const row of f.rows){
-    const id=getField(row,['CAPID','MemberID']);if(!id)continue;
-    if(members.has(id))throw Error('CAPID '+id+' occurs more than once in selected membership records. Remove duplicate roster files.');
-    const names=nameParts(row),grade=getField(row,['Grade','Rank','CurGrade','GradeName']);
-    const kind=memberKind(getField(row,['Kind','MemberType','Type','MemberCategory']),grade);
-    let rawParent=getField(row,['ParentEmail','Parent1Email','Parent2Email','GuardianEmail']);
-    const unit=getField(row,['Unit','UnitID','CharterNumber','ORGID','OrganizationID']);
-    const status=getField(row,['Active','MembershipActive','MembershipStatus']);
-    members.set(id,{
-      capid:id,first_name:names.first,last_name:names.last,grade,kind,unit,
-      unit_name:getField(row,['UnitName','SquadronName','OrganizationName']),
-      email:getField(row,['PrimaryEmail','Email','EmailAddress','EmailPrimary']).toLowerCase(),
-      parent_email:rawParent,active:!['false','0','inactive','expired','terminated'].includes(status.toLowerCase())
-    });
-   }
-  }else if(contactFile){recognized.push(f.filename+' — contacts ('+f.rows.length+')');contacts.push(...f.rows)}
-  else if(orgFile){
-   recognized.push(f.filename+' — organizations ('+f.rows.length+')');
-   for(const row of f.rows){const id=getField(row,['ORGID','OrganizationID']);if(!id)continue;
-    orgs.set(id,{unit:getField(row,['CharterNumber','Charter','UnitID'])||id,
-      name:getField(row,['Name','UnitName','OrganizationName'])||id})}
-  }else ignored.push(f.filename+' — '+(f.reason||'not needed for roster matching'));
- }
- if(!members.size)throw Error('No member roster was found. Select the CAPWATCH file containing CAPID, first name, last name and grade.');
- for(const row of contacts){
-  const id=getField(row,['CAPID','MemberID']),member=members.get(id);
-  if(!member)continue;
-  const kind=getField(row,['Type','ContactType','ContactName','Category']).toLowerCase().replace(/[^a-z]/g,'');
-  const address=getField(row,['Contact','ContactValue','Value','Email','EmailAddress','ParentEmail']);
-  if(!validEmail(address))continue;
-  if(kind.includes('parent')||kind.includes('guardian')) {
-   const old=member.parent_email?member.parent_email.split(/[;,]/).map(x=>x.trim()):[];
-   if(!old.some(x=>x.toLowerCase()===address.toLowerCase()))old.push(address);
-   member.parent_email=old.join(';');
-  }else if(!member.email&&(['email','primaryemail','emailaddress','memberemail',''].includes(kind))){
-   member.email=address.toLowerCase();
+  const base=file.name.toLowerCase().replace(/^.*[/\\]/,'');
+  const isMember=/^member\.(txt|csv)$/.test(base);
+  const isContact=/^mbrcontacts?\.(txt|csv)$/.test(base);
+  if(!isMember&&!isContact){ignored.push(file.name+' — not needed');continue}
+  if(file.size>30*1024*1024)throw Error(file.name+': 30 MB maximum per file');
+  const parsed=parseDelimited(decodeCapwatch(await file.arrayBuffer()),file.name);
+  if(isMember){
+   if(memberFile)throw Error('Select only one Member.txt file');
+   const required=['capid','namelast','namefirst','rank','type','orgid','wing','unit'];
+   const missing=required.filter(h=>!parsed.header.includes(h));
+   if(missing.length)throw Error(file.name+': missing CAPWATCH Member headings: '+missing.join(', '));
+   memberFile=parsed;
+   recognized.push(file.name+' — member roster ('+parsed.rows.length+' rows)');
+  }else{
+   if(contactFile)throw Error('Select only one MbrContact.txt / MbrContacts.txt file');
+   const required=['capid','type','priority','contact'];
+   const missing=required.filter(h=>!parsed.header.includes(h));
+   if(missing.length)throw Error(file.name+': missing CAPWATCH contact headings: '+missing.join(', '));
+   contactFile=parsed;
+   recognized.push(file.name+' — contact records ('+parsed.rows.length+' rows)');
   }
  }
- let rows=[...members.values()],issues=[];
- for(const r of rows){
-  const org=orgs.get(r.unit);
-  if(org){r.unit=org.unit;r.unit_name=org.name}
-  r.unit=r.unit.trim();r.grade=r.grade.trim();r.first_name=r.first_name.trim();r.last_name=r.last_name.trim();
-  if(!/^\d{1,10}$/.test(r.capid))issues.push('Invalid CAPID '+r.capid);
-  if(!r.first_name||!r.last_name)issues.push('CAPID '+r.capid+': missing first/last name');
-  if(!r.grade)issues.push('CAPID '+r.capid+': missing grade');
-  if(!r.kind)issues.push('CAPID '+r.capid+': cannot determine cadet/senior');
-  if(!r.unit)issues.push('CAPID '+r.capid+': missing unit/ORGID');
-  if(!validEmail(r.email))issues.push('CAPID '+r.capid+': missing or invalid primary email');
-  const parents=String(r.parent_email||'').split(/[;,]/).map(x=>x.trim()).filter(Boolean);
-  if(parents.some(x=>!validEmail(x)))issues.push('CAPID '+r.capid+': invalid parent email');
+ if(!memberFile||!contactFile){
+  throw Error('Both Member.txt and MbrContact.txt (also accepted: MbrContacts.txt) are required. You can select them together; other extracts are ignored.');
  }
+ const members=new Map();
+ for(const r of memberFile.rows){
+  const capid=getField(r,['CAPID']);
+  if(!capid)continue;
+  if(members.has(capid)){issues.push('Duplicate CAPID in Member.txt: '+capid);continue}
+  const wing=getField(r,['Wing']).toUpperCase(),unitText=getField(r,['Unit']);
+  const orgid=getField(r,['ORGID']);
+  const unitId=orgid||(wing&&unitText?wing+'-'+unitText:'');
+  const first=getField(r,['NameFirst']),last=getField(r,['NameLast']);
+  const grade=getField(r,['Rank']),kind=memberKind(getField(r,['Type']));
+  const status=getField(r,['MbrStatus']).toUpperCase().replace(/[\s_-]+/g,'');
+  const active=!['INACTIVE','EXPIRED','TERMINATED','SUSPENDED','DECEASED'].includes(status);
+  const unitName=wing&&unitText?(wing+'-'+unitText):orgid;
+  members.set(capid,{
+   capid,first_name:first,last_name:last,grade,kind,
+   unit:unitId,unit_name:unitName,
+   email:'',parent_email:'',active
+  });
+  if(!/^\d{1,10}$/.test(capid))issues.push('Member CAPID '+capid+' is invalid');
+  if(!first||!last)issues.push('CAPID '+capid+': missing NameFirst/NameLast');
+  if(!kind)issues.push('CAPID '+capid+': unrecognized membership Type '+getField(r,['Type']));
+  if(!unitId)issues.push('CAPID '+capid+': missing ORGID and Wing/Unit');
+  if(!grade)warnings.push('CAPID '+capid+': no Rank in Member.txt; name will display without grade');
+ }
+ if(!members.size)throw Error('Member.txt contains no member records');
+ const contacts=new Map();let unmatchedContactCount=0,excludedDoNotContact=0;
+ for(const row of contactFile.rows){
+  const id=getField(row,['CAPID']);
+  const member=members.get(id);
+  if(!member){unmatchedContactCount++;continue}
+  const type=getField(row,['Type']).toUpperCase().replace(/\s+/g,' ').trim();
+  if(type!=='EMAIL'&&type!=='CADET PARENT EMAIL')continue;
+  const email=getField(row,['Contact']).toLowerCase();
+  if(!validEmail(email))continue;
+  if(optedOut(getField(row,['DoNotContact']))){excludedDoNotContact++;continue}
+  if(!contacts.has(id))contacts.set(id,{member:[],parent:[]});
+  const item={email,priority:contactPriority(getField(row,['Priority']))};
+  (type==='EMAIL'?contacts.get(id).member:contacts.get(id).parent).push(item);
+ }
+ let missingEmail=0,cadetsWithParent=0;
+ for(const [id,m] of members){
+  const c=contacts.get(id)||{member:[],parent:[]};
+  c.member.sort((a,b)=>a.priority-b.priority);
+  c.parent.sort((a,b)=>a.priority-b.priority);
+  // The member's PRIMARY email wins; SECONDARY is a fallback. Never use parent email as the member login.
+  const own=c.member.find(x=>x.priority===0)||c.member.find(x=>x.priority===1)||c.member[0];
+  if(own)m.email=own.email;else missingEmail++;
+  // Parent emails are independent of the member's email. Preserve distinct verified addresses,
+  // potentially two guardians, in their CAPWATCH priority order.
+  if(m.kind==='cadet'){
+   const seen=new Set();
+   for(const x of c.parent){
+    if(!seen.has(x.email)){seen.add(x.email);m.parent_email+=(m.parent_email?';':'')+x.email}
+   }
+   if(seen.size)cadetsWithParent++;
+  }
+ }
+ if(missingEmail)warnings.push(missingEmail+' member(s) have no usable EMAIL contact. They will appear on the roster but cannot register until their email is updated in eServices.');
+ if(excludedDoNotContact)warnings.push(excludedDoNotContact+' email contact record(s) marked DoNotContact were not selected for login or guardian access.');
+ if(unmatchedContactCount)warnings.push(unmatchedContactCount+' contact row(s) did not match a Member.txt CAPID and were ignored.');
+ if(!Array.from(members.values()).some(m=>m.email))
+  issues.push('No member EMAIL contacts were matched. Verify the CAPWATCH MbrContact.txt Type/Priority columns before importing.');
+ const rows=[...members.values()];
  if(rows.length>10000)issues.push('Roster exceeds 10,000 members');
- return {rows,issues,recognized,ignored,files:chosen.map(f=>f.name)};
+ const stats={members:rows.length,memberEmails:rows.length-missingEmail,missingEmail,cadetsWithParent,
+  contacts:contactFile.rows.length,units:new Set(rows.map(r=>r.unit)).size,
+  inactive:rows.filter(r=>!r.active).length};
+ return {rows,issues,warnings,recognized,ignored,stats,
+   files:chosen.map(f=>f.name)};
 }
 function capwatchReview(candidate,full){
  state.importCandidate={...candidate,full};
- let {rows,issues,recognized,ignored}=candidate;
+ const {rows,issues,warnings,recognized,ignored,stats}=candidate;
  const safe=issues.length===0;
- modal('<h2>CAPWATCH import review</h2><p class="subtitle">Nothing has been uploaded. Review how the files matched before importing.</p>'+
- '<div class="info"><strong>'+rows.length+' members</strong> from '+recognized.length+' relevant extract(s).'+(full?' <strong>Full snapshot: absent members in included units may be disabled.</strong>':' Partial import: no absent members deactivated.')+'</div>'+
- '<div class="label">Matched files</div><div class="hint">'+(recognized.map(esc).join('<br>')||'None')+'</div>'+
- (ignored.length?'<div class="label">Ignored files</div><div class="hint">'+ignored.map(esc).join('<br>')+'</div>':'')+
- '<div class="label">Validation</div>'+(safe?'<p class="hint">All required fields have values. This checks structure, not independent CAPWATCH accuracy.</p>':
- '<div class="info warning"><strong>Import blocked — '+issues.length+' issue(s)</strong><p>'+issues.slice(0,14).map(esc).join('<br>')+(issues.length>14?'<br>… and '+(issues.length-14)+' more':'')+'</p></div>')+
- '<div class="label">Sample (first five)</div><div style="max-height:230px;overflow:auto">'+rows.slice(0,5).map(r=>'<div class="choice"><div><strong>'+esc([r.grade,r.last_name+', '+r.first_name].join(' '))+'</strong><div class="hint">'+esc(r.capid)+' • '+esc(r.unit)+' • '+esc(r.kind)+' • '+esc(r.email)+'</div></div></div>').join('')+'</div>'+
+ modal('<h2>CAPWATCH import review</h2>'+
+ '<p class="subtitle">Joined Member.txt with MbrContact.txt by CAPID. No source files have been uploaded.</p>'+
+ '<div class="info"><strong>'+stats.members+' member records</strong> • '+stats.units+' units • '+stats.memberEmails+
+ ' member email addresses • '+stats.cadetsWithParent+' cadets with guardian email addresses.</div>'+
+ '<p class="hint">'+(full?
+ '<strong>Full snapshot:</strong> members absent from represented units may be deactivated. Only use with complete extracts.':
+ '<strong>Partial import:</strong> members absent from these files are not deactivated.')+'</p>'+
+ '<div class="label">Matched files</div><div class="hint">'+recognized.map(esc).join('<br>')+'</div>'+
+ (ignored.length?'<div class="label">Other extracts safely ignored</div><div class="hint">'+ignored.map(esc).join('<br>')+'</div>':'')+
+ '<div class="label">Validation</div>'+
+ (issues.length?'<div class="info warning"><strong>Import blocked — '+issues.length+' issue(s)</strong><p>'+
+ issues.slice(0,12).map(esc).join('<br>')+(issues.length>12?'<br>… and '+(issues.length-12)+' more':'')+'</p></div>':
+ '<p class="hint">CAPWATCH member and contact layouts recognized. Grade, name, email, and unit shown below for spot checking.</p>')+
+ (warnings.length?'<details><summary>'+warnings.length+' warning(s) — review</summary><p class="hint">'+
+ warnings.slice(0,40).map(esc).join('<br>')+(warnings.length>40?'<br>… and '+(warnings.length-40)+' more':'')+'</p></details>':'')+
+ '<div class="label">Sample — first five records</div><div style="max-height:230px;overflow:auto">'+
+ rows.slice(0,5).map(r=>'<div class="choice"><div><strong>'+
+ esc([r.grade,r.last_name+', '+r.first_name].filter(Boolean).join(' '))+
+ '</strong><div class="hint">CAPID '+esc(r.capid)+' • '+esc(r.unit_name)+' (ORGID '+esc(r.unit)+
+ ') • '+esc(r.kind)+' • '+esc(r.email||'No member email')+
+ (r.parent_email?' • Guardian email present':'')+'</div></div></div>').join('')+'</div>'+
  '<div class="form-actions"><button data-act="close-modal" class="btn light">Cancel</button>'+
- (safe?'<button data-act="import-commit" class="btn">Confirm import of '+rows.length+' members</button>':'')+'</div>')
+ (safe?'<button data-act="import-commit" class="btn">Confirm '+rows.length+' member records</button>':'')+
+ '</div>');
 }
 
 document.addEventListener('click',async function(ev){let a=ev.target.closest('[data-act],[data-tab],[data-thread],[data-board],[data-post],[data-file],[data-approve],[data-disable],[data-reactivate],[data-toggleadmin],[data-editmsg],[data-removemsg],[data-removepost],[data-removecomment]');if(!a)return;

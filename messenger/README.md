@@ -21,19 +21,48 @@ This is a standalone web/PWA application in the `/messenger/` folder of the CAP 
 - Mobile responsive UI and basic web-app manifest. CAP Schedule opens in a new tab.
 - Application admin can switch unit context and designate other unit admins.
 
+## Native CAPWATCH Member.txt + MbrContact.txt import
+
+The importer now consumes **the original extracted CAPWATCH TXT files**, not a manually created roster CSV. Select **Member.txt** and **MbrContact.txt** (the spelling **MbrContacts.txt** also works) together in Administration → Import CAPWATCH files. You may select additional .txt/.csv files; unrelated filenames are skipped without reading their contents. Raw ZIP files must be extracted first.
+
+The CAPWATCH layouts used are:
+
+```text
+Member.txt:
+CAPID,SSN,NameLast,NameFirst,NameMiddle,NameSuffix,Gender,DOB,Profession,EducationLevel,Citizen,ORGID,Wing,Unit,Rank,Joined,Expiration,OrgJoined,UsrID,DateMod,LSCode,Type,RankDate,Region,MbrStatus,PicStatus,PicDate,CdtWaiver,Ethnicity
+
+MbrContact.txt:
+CAPID,Type,Priority,Contact,UsrID,DateMod,DoNotContact,ContactName
+```
+
+Mapping:
+- `Member.CAPID` → `MbrContact.CAPID`. Identifiers including leading zeros remain text.
+- `NameLast`, `NameFirst` and `Rank` → sender display `Rank Last, First`.
+- `Member.Type` determines CADET or SENIOR.
+- `Member.ORGID` is the stable squadron identifier. `Wing` + `Unit` form the readable unit label.
+- `MbrContact.Type = EMAIL` supplies the member's login address. `Priority = PRIMARY` wins, then SECONDARY; lower-ranked email types are fallback only.
+- `MbrContact.Type = CADET PARENT EMAIL` supplies one or more distinct parent/guardian emails, ordered PRIMARY then SECONDARY then EMERGENCY. Other contact types, including phones, are not used.
+- Contact records with `DoNotContact` flagged true are not chosen as email addresses.
+- If a member has no usable email, the roster entry is still imported, but they **cannot register** until their address is corrected in eServices and a new import is run.
+- `Member.MbrStatus` is used to recognize obvious inactive/expired/terminated/suspended/deceased statuses; absent members can be deactivated by the explicit full-snapshot option.
+
+**Sensitive information:** CAPWATCH `SSN`, date of birth, gender, ethnicity, and other unused columns are ignored in the normalized import, which uploads only selected fields needed for membership, communications and guardian relationships. The preview shows no SSN. No raw CAPWATCH text file is uploaded to Supabase. Source text is parsed in the user's browser memory.
+
+The tool performs column and contact-type validation and provides a preview. It has been verified with **synthetic rows using the exact published header layouts**, not with the user's actual CAPWATCH export bytes. Confirm the preview against a real extract before committing a full snapshot.
+
 ## First setup/test
 
 1. Open the site and sign in with the **existing application administrator account** from the old Uniform Inspections Supabase project. It has been granted Messenger platform administrator access. Don't post real member data yet.
 2. In Supabase Dashboard → **Authentication → URL Configuration**, add `https://srg9832.github.io/CAPSchedule/messenger/` to the redirect allow list and consider setting it as the Site URL now that the old inspection app has been migrated. This connection cannot modify Auth URL settings automatically.
-3. In Messenger → Administration → Import CAPWATCH, use a CSV with these columns: `CAPID,First Name,Last Name,Grade,Email,Kind,Unit,Unit Name,Parent Email,Active`. Use `senior` or `cadet` in Kind, and `true` or `false` in Active.
-4. Do a **partial** import first to establish member records without deactivating anybody. Only check full snapshot after confirming the extract is complete for every included unit.
+3. In Messenger → Administration → Import CAPWATCH, select Member.txt plus MbrContact.txt (or MbrContacts.txt) together. Review the joined roster, member email and guardian email counts, and warnings before confirming.
+4. Do a **partial** import first to establish member records without deactivating anybody. Only check full snapshot after verifying the Member.txt roster is complete for every included unit.
 5. Approved/verified member emails can then sign up, confirm their emails, and retry registration. The platform admin or assigned unit administrator reviews them in Administration.
 6. Use the squadron selector at the top of the app to operate in a unit.
 7. Test group messaging, boards, and requests with clearly fictional accounts.
 
 ## CSV assumptions and cautions
 
-The proof-of-concept parser accepts some alternate headers but is **not** a certified raw CAPWATCH parser. Adapt your PowerShell export to the columns in `capwatch-template.csv`. Parent emails come solely from this import. Never import dummy sample data into real membership.
+The importer explicitly recognizes Member.txt and MbrContact.txt headers described above, with all CAPWATCH identifiers preserved as text. An additional template CSV is available for development, but no export transformation is necessary for the two named CAPWATCH text files. Never import dummy sample data into real membership.
 
 The optional **full snapshot** processes only units represented in the CSV; if a unit is entirely absent from a partial source, it is not deleted. It rejects a greater-than-25% membership reduction (for units with five or more existing active members) until reviewed. Local deactivations always remain in place.
 
@@ -67,4 +96,4 @@ Text lives in `msg_messages` / `msg_posts`, request queues in `msg_requests`, an
 - Members may edit or remove their own messages. Unit administrators may remove messages from their units; the application administrator may remove any accessible conversation message. Original text stays in RLS-protected, non-client-readable revision tables. Bulletin posts and comments can be removed by their authors or eligible administrators.
 - Application administrator accounts are protected against deactivation or demotion through both the web UI and a database trigger. Intentional removal requires separate privileged database maintenance.
 - Unit admins can change mandatory cadet quiet hours. All users can save additional quiet periods that expire automatically. **Notifications are not yet implemented**, so these preferences don't currently silence any active push service.
-- CAPWATCH import accepts multiple extracted `.txt` / `.csv` files selected together and matches member/contact/organization rows by CAPID or ORGID where recognizable. It does not currently accept raw ZIP files. Unknown extract layouts are not guaranteed. Review unmatched or incomplete records before importing; contact and parent email fields must be present in the source.
+- CAPWATCH import accepts Member.txt and MbrContact.txt/MbrContacts.txt selected together, joins member and contact records by CAPID, and uses ORGID for unit membership. It does not currently accept ZIP files. Unrelated text extracts are ignored, and the original Member.txt SSN/DOB and other unused fields are not uploaded. Review unmatched or incomplete records before importing; contact and parent email fields must be present in the source.

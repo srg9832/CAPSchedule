@@ -304,28 +304,101 @@ function capwatchReview(candidate,full){
  (safe?'<button data-act="import-commit" class="btn">Confirm import of '+rows.length+' members</button>':'')+'</div>')
 }
 
-document.addEventListener('click',async function(ev){let a=ev.target.closest('[data-act],[data-tab],[data-thread],[data-board],[data-post],[data-file],[data-approve],[data-disable],[data-reactivate],[data-toggleadmin]');if(!a)return;
+document.addEventListener('click',async function(ev){let a=ev.target.closest('[data-act],[data-tab],[data-thread],[data-board],[data-post],[data-file],[data-approve],[data-disable],[data-reactivate],[data-toggleadmin],[data-editmsg],[data-removemsg],[data-removepost],[data-removecomment]');if(!a)return;
 if(a.closest('.modal')&&a.dataset.act==='close-modal'){closeModal();return}if(a.dataset.act==='close-modal'&&ev.target===a){closeModal();return}if(a.dataset.tab){setTab(a.dataset.tab);return}
 try{
 if(a.dataset.thread){await readThread(a.dataset.thread);return}
 if(a.dataset.board){state.board=a.dataset.board;render();return}
 if(a.dataset.post){await showComments(a.dataset.post);return}
 if(a.dataset.file){const r=await db.storage.from('msg-attachments').createSignedUrl(a.dataset.file,60);if(r.error)throw r.error;window.open(r.data.signedUrl,'_blank','noopener');return}
-if(a.dataset.approve||a.dataset.disable||a.dataset.reactivate||a.dataset.toggleadmin){let id=a.dataset.approve||a.dataset.disable||a.dataset.reactivate||a.dataset.toggleadmin;const old=state.adminAccounts.find(x=>x.user_id===id);if(!old)return;let changingAdmin=!!a.dataset.toggleadmin;let disabled=changingAdmin?old.disabled:!!a.dataset.disable;let approved=changingAdmin?old.approved:disabled?old.approved:true;let newAdmin=changingAdmin?!old.unit_admin:old.unit_admin;if(!confirm((changingAdmin?(newAdmin?'Make unit admin: ':'Remove unit admin: '):disabled?'Deactivate ':a.dataset.approve?'Approve ':'Reactivate ')+old.display_name+'?'))return;let r=await db.rpc('msg_set_account_status',{p_user:id,p_approved:approved,p_disabled:disabled,p_unit_admin:newAdmin});if(r.error)throw r.error;toast('Account updated');await refreshTab();return}
-switch(a.dataset.act){case 'logout':await db.auth.signOut();state.user=null;state.profile=null;state.loadError='';render();break;
+
+if(a.dataset.editmsg){
+ const m=state.messages.find(x=>x.id===a.dataset.editmsg);
+ if(!m||m.deleted_at||m.sender_id!==state.user.id)return;
+ state.editMessageId=m.id;
+ modal('<h2>Edit your message</h2><p class="hint">The previous text is preserved in the administrative revision history.</p><form id="edit-message-form"><textarea name="body" class="field" rows="5" maxlength="4000" required>'+esc(m.body)+'</textarea><div class="form-actions"><button class="btn light" type="button" data-act="close-modal">Cancel</button><button type="submit" class="btn">Save edit</button></div></form>');
+ return;
+}
+if(a.dataset.removemsg){
+ const m=state.messages.find(x=>x.id===a.dataset.removemsg);
+ if(!m||!canRemoveMessage(m))return;
+ if(!confirm('Remove this message from the chat? Its original text will remain in the protected administrative record.'))return;
+ const r=await db.rpc('msg_change_message',{p_id:m.id,p_action:'remove',p_body:null});
+ if(r.error)throw r.error;toast('Message removed from chat');await loadMessages();return;
+}
+if(a.dataset.removepost){
+ const p=state.posts.find(x=>x.id===a.dataset.removepost);if(!p||!canRemoveBoard(p))return;
+ if(!confirm('Remove this post from the bulletin board? The original remains in the administrative record.'))return;
+ const r=await db.rpc('msg_change_board',{p_kind:'post',p_id:p.id,p_action:'remove'});
+ if(r.error)throw r.error;toast('Post removed');await refreshTab();return;
+}
+if(a.dataset.removecomment){
+ const c=state.comments.find(x=>x.id===a.dataset.removecomment),p=state.posts.find(x=>x.id===state.activePost);
+ if(!c||!p||!canRemoveBoard({...p,author_id:c.author_id}))return;
+ if(!confirm('Remove this comment? The original remains in the administrative record.'))return;
+ const r=await db.rpc('msg_change_board',{p_kind:'comment',p_id:c.id,p_action:'remove'});
+ if(r.error)throw r.error;toast('Comment removed');await showComments(p.id);return;
+}
+if(a.dataset.approve||a.dataset.disable||a.dataset.reactivate||a.dataset.toggleadmin){let id=a.dataset.approve||a.dataset.disable||a.dataset.reactivate||a.dataset.toggleadmin;const old=state.adminAccounts.find(x=>x.user_id===id);if(!old||old.platform_admin)return;let changingAdmin=!!a.dataset.toggleadmin;let disabled=changingAdmin?old.disabled:!!a.dataset.disable;let approved=changingAdmin?old.approved:disabled?old.approved:true;let newAdmin=changingAdmin?!old.unit_admin:old.unit_admin;if(!confirm((changingAdmin?(newAdmin?'Make unit admin: ':'Remove unit admin: '):disabled?'Deactivate ':a.dataset.approve?'Approve ':'Reactivate ')+old.display_name+'?'))return;let r=await db.rpc('msg_set_account_status',{p_user:id,p_approved:approved,p_disabled:disabled,p_unit_admin:newAdmin});if(r.error)throw r.error;toast('Account updated');await refreshTab();return}
+switch(a.dataset.act){
+case 'import-commit':{
+ const i=state.importCandidate;
+ if(!i||i.issues.length)throw Error('No validated roster is ready');
+ if(!confirm('Commit '+i.rows.length+' imported CAPWATCH members?'+(i.full?' This is a FULL SNAPSHOT.':'')))return;
+ a.disabled=true;
+ try{const r=await db.rpc('msg_import_members',{p_rows:i.rows,p_full_snapshot:i.full});
+ if(r.error)throw r.error;state.importCandidate=null;closeModal();toast('Imported '+r.data.imported+' CAPWATCH records');await loadBase();await refreshTab()}
+ finally{a.disabled=false}break;
+}
+case 'remove-avatar':{
+ if(!confirm('Remove your profile picture from the application?'))return;
+ const r=await db.rpc('msg_set_my_avatar',{p_path:null});if(r.error)throw r.error;
+ state.avatars[state.user.id]=null;await init();toast('Profile picture removed');break;
+}
+case 'logout':await db.auth.signOut();state.user=null;state.profile=null;state.loadError='';render();break;
 case 'retry':await init();break;case 'switch-auth':state.authMode=state.authMode==='signup'?'signin':'signup';render();break;
 case 'new-chat':newChat();break;case 'new-post':newPost();break;case 'new-request':newRequest();break;
 case 'attach':document.getElementById('file-input')?.click();break;case 'back-chat':state.activeThread=null;render();break;}
 }catch(e){err(e)}});
 document.addEventListener('submit',async function(ev){if(!ev.target.id)return;ev.preventDefault();let f=ev.target;let b=f.querySelector('[type=submit]');if(b)b.disabled=true;try{
 if(f.id==='auth-form'){let email=f.elements.namedItem('email').value.trim(),password=f.elements.namedItem('password').value;if(state.authMode==='signup'){const r=await db.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname}});if(r.error)throw r.error;toast('Check your email to confirm your account, then sign in.');state.authMode='signin';renderAuth()}else{const r=await db.auth.signInWithPassword({email,password});if(r.error)throw r.error;await init()} }
+
+if(f.id==='edit-message-form'){
+ const body=f.elements.namedItem('body').value.trim();
+ if(!body)throw Error('Message cannot be empty');
+ const r=await db.rpc('msg_change_message',{p_id:state.editMessageId,p_action:'edit',p_body:body});
+ if(r.error)throw r.error;closeModal();toast('Message edited');await loadMessages();
+}
+if(f.id==='avatar-form'){
+ const file=f.elements.namedItem('photo').files[0];
+ if(!file)throw Error('Choose an image first');
+ if(!['image/png','image/jpeg','image/webp'].includes(file.type))throw Error('Only JPG, PNG or WebP images are allowed');
+ if(file.size>12*1024*1024)throw Error('Original image cannot exceed 12 MB');
+ const bitmap=await createImageBitmap(file),canvas=document.createElement('canvas');
+ canvas.width=256;canvas.height=256;
+ const ctx=canvas.getContext('2d'),edge=Math.min(bitmap.width,bitmap.height);
+ ctx.drawImage(bitmap,(bitmap.width-edge)/2,(bitmap.height-edge)/2,edge,edge,0,0,256,256);
+ bitmap.close();
+ const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('Image conversion failed')),'image/jpeg',.82));
+ if(blob.size>1048576)throw Error('Profile photo exceeds 1MB after conversion');
+ const path=state.user.id+'/'+crypto.randomUUID()+'.jpg';
+ const upload=await db.storage.from('msg-avatars').upload(path,blob,{contentType:'image/jpeg',upsert:false});
+ if(upload.error)throw upload.error;
+ const saved=await db.rpc('msg_set_my_avatar',{p_path:path});
+ if(saved.error)throw saved.error;await init();toast('Profile picture updated');
+}
+if(f.id==='unit-quiet-form'){
+ const start=Number(f.elements.namedItem('start').value),end=Number(f.elements.namedItem('end').value);
+ const r=await db.rpc('msg_set_cadet_quiet',{p_unit:state.profile.unit_id,p_start:start,p_end:end});
+ if(r.error)throw r.error;await loadBase();await refreshTab();toast('Mandatory cadet quiet hours saved');
+}
 if(f.id==='send-form'){let body=f.elements.namedItem('body').value;let file=document.getElementById('file-input')?.files[0];await sendMessage(body,file);f.elements.namedItem('body').value='';let field=document.getElementById('file-input');if(field)field.value=''}
 if(f.id==='chat-form'){let ids=Array.from(f.querySelectorAll('input[name=person]:checked')).map(x=>x.value);const r=await db.rpc('msg_start_thread',{p_users:ids,p_title:f.elements.namedItem('title').value});if(r.error)throw r.error;closeModal();await refreshTab();await readThread(r.data);toast('Conversation created')}
 if(f.id==='post-form'){let r=await db.from('msg_posts').insert({audience:state.board,unit_id:state.board==='wing'?null:state.profile.unit_id,author_id:state.user.id,title:f.elements.namedItem('title').value.trim(),body:f.elements.namedItem('body').value.trim()});if(r.error)throw r.error;closeModal();toast('Post published');await refreshTab()}
 if(f.id==='comment-form'){let r=await db.from('msg_comments').insert({post_id:state.activePost,author_id:state.user.id,body:f.elements.namedItem('body').value.trim()});if(r.error)throw r.error;let id=state.activePost;closeModal();await showComments(id)}
 if(f.id==='request-form'){let r=await db.from('msg_requests').insert({user_id:state.user.id,unit_id:state.profile.unit_id,kind:f.elements.namedItem('kind').value,note:f.elements.namedItem('note').value.trim()});if(r.error)throw r.error;closeModal();toast('Request added to queue');await refreshTab()}
 if(f.id==='quiet-form'){let start=f.elements.namedItem('start').value;let end=f.elements.namedItem('end').value;if(start!==''&&end==='')throw Error('Choose an end time');let hours=Number(f.elements.namedItem('hours').value);let r=await db.from('msg_quiet').upsert({user_id:state.user.id,extra_start:start===''?null:Number(start),extra_end:start===''?null:Number(end),extra_until:start===''?null:new Date(Date.now()+hours*3600000).toISOString()});if(r.error)throw r.error;toast('Quiet-hour preference saved')}
-if(f.id==='import-form'){let file=f.elements.namedItem('csv').files[0];if(!file)throw Error('Select a CSV file');const data=parseCsv(await file.text());if(!data.length)throw Error('CSV had no recognizable rows');let full=f.elements.namedItem('full').checked;let message='Import '+data.length+' member records from CAPWATCH?'+(full?' This is a FULL SNAPSHOT and may disable missing members from included units.':' Existing members absent from this file will not be disabled.');if(!confirm(message))return;let r=await db.rpc('msg_import_members',{p_rows:data,p_full_snapshot:full});if(r.error)throw r.error;toast('Imported '+r.data.imported+' records across '+r.data.units.length+' unit(s)')}
+if(f.id==='import-form'){const files=f.elements.namedItem('files').files;const result=await prepareCapwatch(files);capwatchReview(result,f.elements.namedItem('full').checked)}
 }catch(e){err(e)}finally{if(b)b.disabled=false}});
 document.addEventListener('change',async function(ev){let s=ev.target;if(s.id==='admin-unit-selector'){try{let r=await db.rpc('msg_switch_unit',{p_unit:s.value});if(r.error)throw r.error;state.activeThread=null;state.messages=[];await init();toast('Active squadron changed')}catch(e){err(e)}return}if(s.dataset.request){try{let status=s.value;let r=await db.from('msg_requests').update({status,updated_at:new Date().toISOString(),completed_at:status==='completed'?new Date().toISOString():null}).eq('id',s.dataset.request);if(r.error)throw r.error;toast('Request updated');await refreshTab()}catch(e){err(e)}}if(s.id==='file-input'&&s.files.length){let c=document.querySelector('#send-form textarea');if(c&&!c.value.trim())c.value='📎 '+s.files[0].name}});
 window.addEventListener('online',()=>{state.online=true;flushOutbox()});window.addEventListener('offline',()=>{state.online=false;toast('Offline mode — messages will be queued')});

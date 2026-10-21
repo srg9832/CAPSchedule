@@ -350,7 +350,7 @@ Deno.serve(async (req: Request) => {
         last_name: lastName || null,
         capid: capid || null,
       };
-      if (!profile?.default_unit_id && homeUnitId) profilePatch.default_unit_id = homeUnitId;
+      if (homeUnitId) profilePatch.default_unit_id = homeUnitId;
 
       const { error: profileUpdateError } = await admin.from("profiles").update(profilePatch).eq("id", user.id);
       if (profileUpdateError) throw profileUpdateError;

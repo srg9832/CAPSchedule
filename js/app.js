@@ -65,6 +65,7 @@ function bindGlobalUI(){
   $('#accountButton').addEventListener('click',()=>openAccountDialog(false,false));
   $('#passwordButton').addEventListener('click',()=>openAccountDialog(false,true));
   $('#accountForm').addEventListener('submit',saveAccount);
+  $('#accountDialog').addEventListener('cancel',e=>{if($('#accountDialog').dataset.forcePassword==='true')e.preventDefault()});
   $('#syncButton').addEventListener('click',syncOfflineWork);
 
   $('#publicUnitSelect').addEventListener('change',async()=>{syncPublicDefaultCheckbox();await renderPublicSchedule()});

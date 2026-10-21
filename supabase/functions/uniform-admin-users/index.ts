@@ -42,21 +42,38 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     if (permError || !perm?.is_app_admin) {
-      return json({ error: "Uniform Inspection administrator access is required." }, 403);
+      return json({ error: "Uniform Inspection Application Admin access is required." }, 403);
     }
 
     const body = await req.json();
     const email = String(body.email || "").trim().toLowerCase();
     const displayName = String(body.display_name || "").trim();
     const password = String(body.password || "");
-    const role = body.role === "admin" ? "admin" : "inspector";
+    const rawRole = String(body.role || "inspector");
+    const role = rawRole === "admin" ? "application_admin" : rawRole;
     const unitId = body.unit_id ? String(body.unit_id) : null;
+    const homeUnitId = body.home_unit_id ? String(body.home_unit_id) : unitId;
 
     if (!email || !displayName) {
       return json({ error: "Display name and email are required." }, 400);
     }
-    if (role === "inspector" && !unitId) {
-      return json({ error: "Choose a unit for the inspector." }, 400);
+    if (!["inspector", "unit_admin", "application_admin"].includes(role)) {
+      return json({ error: "Choose Inspector, Unit Admin, or Application Admin." }, 400);
+    }
+    if (!homeUnitId) {
+      return json({ error: "Choose a Home Unit for the user." }, 400);
+    }
+    if (role !== "application_admin" && !unitId) {
+      return json({ error: "Choose the unit where this user will have access." }, 400);
+    }
+
+    const { data: homeUnit, error: homeUnitError } = await service
+      .from("units")
+      .select("id,active")
+      .eq("id", homeUnitId)
+      .maybeSingle();
+    if (homeUnitError || !homeUnit?.active) {
+      return json({ error: "Choose an active Home Unit." }, 400);
     }
 
     let existingUser: any = null;
@@ -86,18 +103,22 @@ Deno.serve(async (req: Request) => {
 
     const { data: profile } = await service.from("profiles").select("id").eq("id", user.id).maybeSingle();
     if (profile) {
-      const { error } = await service.from("profiles").update({ display_name: displayName }).eq("id", user.id);
+      const { error } = await service
+        .from("profiles")
+        .update({ display_name: displayName, default_unit_id: homeUnitId })
+        .eq("id", user.id);
       if (error) throw error;
     } else {
       const { error } = await service.from("profiles").insert({
         id: user.id,
         display_name: displayName,
         is_app_admin: false,
+        default_unit_id: homeUnitId,
       });
       if (error) throw error;
     }
 
-    if (role === "admin") {
+    if (role === "application_admin") {
       const { error } = await service.from("uniform_global_permissions").upsert({
         user_id: user.id,
         is_app_admin: true,
@@ -109,13 +130,20 @@ Deno.serve(async (req: Request) => {
         user_id: user.id,
         unit_id: unitId,
         can_inspect: true,
-        is_unit_admin: false,
+        is_unit_admin: role === "unit_admin",
         updated_at: new Date().toISOString(),
       }, { onConflict: "user_id,unit_id" });
       if (error) throw error;
     }
 
-    return json({ ok: true, user_id: user.id, shared_account_already_existed: !created });
+    return json({
+      ok: true,
+      user_id: user.id,
+      shared_account_already_existed: !created,
+      role,
+      home_unit_id: homeUnitId,
+      unit_id: unitId,
+    });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : String(error) }, 400);
   }

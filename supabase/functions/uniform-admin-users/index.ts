@@ -231,7 +231,7 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Choose the unit where this user will have access." });
     }
     if (!await callerCanAdminUnit(unitId)) {
-      return json({ error: "You can only add Inspectors to units where you are a Unit Admin." }, 403);
+      return json({ error: "You can only manage users in units where you are a Unit Admin." }, 403);
     }
 
     const capid = clean(body.capid);
@@ -244,12 +244,11 @@ Deno.serve(async (req: Request) => {
     let role = clean(body.role || "inspector");
     if (role === "admin") role = "application_admin";
 
-    if (!callerIsAppAdmin) role = "inspector";
     if (!["inspector", "unit_admin", "application_admin"].includes(role)) {
       return json({ error: "Choose Inspector, Unit Admin, or Application Admin." });
     }
-    if (!callerIsAppAdmin && role !== "inspector") {
-      return json({ error: "Unit Admins may only grant Inspector access." }, 403);
+    if (!callerIsAppAdmin && role === "application_admin") {
+      return json({ error: "Only an Application Admin can grant Application Admin access." }, 403);
     }
 
     let homeUnitId = clean(body.home_unit_id) || unitId;
@@ -265,7 +264,7 @@ Deno.serve(async (req: Request) => {
         if (access.selected_unit_role === "application_admin") {
           return json({ error: "This account is already an Application Admin and already has access to every Uniform Inspection unit.", code: "already_application_admin" });
         }
-        if (access.selected_unit_role === "unit_admin" && role !== "application_admin") {
+        if (access.selected_unit_role === "unit_admin" && role === "unit_admin") {
           return json({ error: "This account is already a Unit Admin for this unit.", code: "already_unit_admin" });
         }
         if (access.selected_unit_role === "inspector" && role === "inspector") {
@@ -369,9 +368,6 @@ Deno.serve(async (req: Request) => {
       }, { onConflict: "user_id" });
       if (error) throw error;
     } else {
-      if (role === "unit_admin" && !callerIsAppAdmin) {
-        return json({ error: "Only an Application Admin can appoint Unit Admins." }, 403);
-      }
       const { error } = await admin.from("uniform_unit_permissions").upsert({
         user_id: user.id,
         unit_id: unitId,

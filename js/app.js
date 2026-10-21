@@ -115,7 +115,8 @@ async function refreshAuthUI(){
   $('#accountButton').classList.toggle('hidden',!state.user);
   $('#passwordButton').classList.toggle('hidden',!state.user);
   $('#logoutButton').classList.toggle('hidden',!state.user);
-  const canEdit=editableUnits().length>0;$('#planningTabButton').classList.toggle('hidden',!canEdit);$('#activityPlanningTabButton').classList.toggle('hidden',!canEdit);$('#adminTabButton').classList.toggle('hidden',adminUnits().length===0);
+  const passwordBlocked=!!state.user?.mustChangePassword;
+  const canEdit=!passwordBlocked&&editableUnits().length>0;$('#planningTabButton').classList.toggle('hidden',!canEdit);$('#activityPlanningTabButton').classList.toggle('hidden',!canEdit);$('#adminTabButton').classList.toggle('hidden',passwordBlocked||adminUnits().length===0);
   $('.app-admin-only').forEach(x=>x.classList.toggle('hidden',!state.user?.isAppAdmin));populateUnitSelectors();await updateOfflineWorkUI();
   if(state.user?.mustChangePassword&&!state.demoMode&&!$('#accountDialog').open){
     if(!navigator.onLine)toast('Reconnect to change your temporary password before editing.','warning');

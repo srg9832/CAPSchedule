@@ -240,6 +240,7 @@ Deno.serve(async (req: Request) => {
     const email = clean(body.email).toLowerCase();
     const password = String(body.password || "");
     const requestedUserId = clean(body.user_id);
+    const editingExisting = callerIsAppAdmin && Boolean(body.edit_identity) && Boolean(requestedUserId);
     let role = clean(body.role || "inspector");
     if (role === "admin") role = "application_admin";
 
@@ -260,14 +261,16 @@ Deno.serve(async (req: Request) => {
 
     if (user) {
       const access = await uniformAccess(user.id, unitId);
-      if (access.selected_unit_role === "application_admin") {
-        return json({ error: "This account is already an Application Admin and already has access to every Uniform Inspection unit.", code: "already_application_admin" });
-      }
-      if (access.selected_unit_role === "unit_admin" && role !== "application_admin") {
-        return json({ error: "This account is already a Unit Admin for this unit.", code: "already_unit_admin" });
-      }
-      if (access.selected_unit_role === "inspector" && role === "inspector") {
-        return json({ error: "This account is already an Inspector for this unit.", code: "already_inspector" });
+      if (!editingExisting) {
+        if (access.selected_unit_role === "application_admin") {
+          return json({ error: "This account is already an Application Admin and already has access to every Uniform Inspection unit.", code: "already_application_admin" });
+        }
+        if (access.selected_unit_role === "unit_admin" && role !== "application_admin") {
+          return json({ error: "This account is already a Unit Admin for this unit.", code: "already_unit_admin" });
+        }
+        if (access.selected_unit_role === "inspector" && role === "inspector") {
+          return json({ error: "This account is already an Inspector for this unit.", code: "already_inspector" });
+        }
       }
     } else {
       if (!email) return json({ error: "Email is required to create a new shared CAP Applications login." });

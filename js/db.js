@@ -72,7 +72,18 @@ export class CapScheduleDB {
     const {data,error}=await this.client.auth.signInWithPassword({email,password});if(error)throw error;
     this.userContext=await this.loadUserContext(data.user);localStorage.setItem('capSchedule.offlineUserContext',JSON.stringify(this.userContext));return this.userContext;
   }
-  async updatePassword(password){if(this.demoMode)return{ok:true};if(!isOnline())throw new Error('Reconnect before changing your password.');if(!this.client)await this.reconnect();const {error}=await this.client.auth.updateUser({password});if(error)throw error;return{ok:true};}
+  async updatePassword(password){
+    if(this.demoMode){if(this.userContext)this.userContext.mustChangePassword=false;return{ok:true};}
+    if(!isOnline())throw new Error('Reconnect before changing your password.');
+    if(!this.client)await this.reconnect();
+    const {error}=await this.client.auth.updateUser({password});if(error)throw error;
+    const {error:profileError}=await this.client.rpc('shared_complete_password_change');if(profileError)throw profileError;
+    if(this.userContext){
+      this.userContext.mustChangePassword=false;
+      localStorage.setItem('capSchedule.offlineUserContext',JSON.stringify(this.userContext));
+    }
+    return{ok:true};
+  }
   async updateMyDefaultUnit(unitId){
     if(!this.userContext)throw new Error('Login required.');
     if(this.demoMode){this.userContext.defaultUnitId=unitId||null;sessionStorage.setItem('capSchedule.demoUser',JSON.stringify(this.userContext));return;}
@@ -84,11 +95,11 @@ export class CapScheduleDB {
   async signOut(){if(this.demoMode){sessionStorage.removeItem('capSchedule.demoUser');this.userContext=null;return;}if(!this.client||!isOnline()){this.userContext=null;localStorage.removeItem('capSchedule.offlineUserContext');return;}const {error}=await this.client.auth.signOut();if(error)throw error;localStorage.removeItem('capSchedule.offlineUserContext');}
   async loadUserContext(user){
     const [{data:profile,error:pe},{data:perms,error:ue}]=await Promise.all([
-      this.client.from('profiles').select('display_name,is_app_admin,default_unit_id').eq('id',user.id).maybeSingle(),
+      this.client.from('profiles').select('display_name,is_app_admin,default_unit_id,must_change_password').eq('id',user.id).maybeSingle(),
       this.client.from('user_unit_permissions').select('unit_id,can_edit_cadet,can_edit_senior,is_unit_admin,units(name)').eq('user_id',user.id)
     ]);
     if(pe)throw pe;if(ue)throw ue;
-    const context={id:user.id,email:user.email,displayName:profile?.display_name||user.email,isAppAdmin:Boolean(profile?.is_app_admin),defaultUnitId:profile?.default_unit_id||null,permissions:(perms||[]).map(p=>({...p,unit_name:p.units?.name}))};localStorage.setItem('capSchedule.offlineUserContext',JSON.stringify(context));return context;
+    const context={id:user.id,email:user.email,displayName:profile?.display_name||user.email,isAppAdmin:Boolean(profile?.is_app_admin),defaultUnitId:profile?.default_unit_id||null,mustChangePassword:Boolean(profile?.must_change_password),permissions:(perms||[]).map(p=>({...p,unit_name:p.units?.name}))};localStorage.setItem('capSchedule.offlineUserContext',JSON.stringify(context));return context;
   }
 
   canEdit(unitId,program){if(!this.userContext)return false;if(this.userContext.isAppAdmin)return true;const p=this.userContext.permissions.find(x=>x.unit_id===unitId);return Boolean(p&&(program==='cadet'?p.can_edit_cadet:p.can_edit_senior));}

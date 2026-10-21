@@ -53,11 +53,18 @@ async function init(){
 
 function bindGlobalUI(){
   $$('.tab').forEach(b=>b.addEventListener('click',()=>activateTab(b.dataset.tab)));
-  document.addEventListener('click',e=>{if(e.target.closest('.close-dialog'))e.target.closest('dialog')?.close()});
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('.close-dialog'))return;
+    const dialog=e.target.closest('dialog');
+    if(dialog?.id==='accountDialog'&&dialog.dataset.forcePassword==='true')return;
+    dialog?.close();
+  });
   $('#loginButton').addEventListener('click',()=>$('#loginDialog').showModal());
   $('#loginForm').addEventListener('submit',handleLogin);
   $('#logoutButton').addEventListener('click',async()=>{await db.signOut();state.user=null;await refreshAuthUI();activateTab('schedule');toast('Logged out.')});
-  $('#accountButton').addEventListener('click',openAccountDialog);$('#accountForm').addEventListener('submit',saveAccount);
+  $('#accountButton').addEventListener('click',()=>openAccountDialog(false,false));
+  $('#passwordButton').addEventListener('click',()=>openAccountDialog(false,true));
+  $('#accountForm').addEventListener('submit',saveAccount);
   $('#syncButton').addEventListener('click',syncOfflineWork);
 
   $('#publicUnitSelect').addEventListener('change',async()=>{syncPublicDefaultCheckbox();await renderPublicSchedule()});
@@ -103,9 +110,16 @@ function activateTab(name){
 async function handleLogin(e){e.preventDefault();const b=e.submitter;setBusy(b,true,'Logging in…');$('#loginError').textContent='';try{state.user=await db.signIn($('#loginEmail').value.trim(),$('#loginPassword').value);$('#loginDialog').close();await refreshAuthUI();toast('Logged in.','success')}catch(err){$('#loginError').textContent=err.message||String(err)}finally{setBusy(b,false)}}
 async function refreshAuthUI(){
   $('#modeBadge').textContent=state.demoMode?'Demo Mode':'Supabase';$('#userLabel').textContent=state.user?.displayName||'';
-  $('#loginButton').classList.toggle('hidden',!!state.user);$('#accountButton').classList.toggle('hidden',!state.user);$('#logoutButton').classList.toggle('hidden',!state.user);
+  $('#loginButton').classList.toggle('hidden',!!state.user);
+  $('#accountButton').classList.toggle('hidden',!state.user);
+  $('#passwordButton').classList.toggle('hidden',!state.user);
+  $('#logoutButton').classList.toggle('hidden',!state.user);
   const canEdit=editableUnits().length>0;$('#planningTabButton').classList.toggle('hidden',!canEdit);$('#activityPlanningTabButton').classList.toggle('hidden',!canEdit);$('#adminTabButton').classList.toggle('hidden',adminUnits().length===0);
-  $$('.app-admin-only').forEach(x=>x.classList.toggle('hidden',!state.user?.isAppAdmin));populateUnitSelectors();await updateOfflineWorkUI();
+  $('.app-admin-only').forEach(x=>x.classList.toggle('hidden',!state.user?.isAppAdmin));populateUnitSelectors();await updateOfflineWorkUI();
+  if(state.user?.mustChangePassword&&!state.demoMode&&!$('#accountDialog').open){
+    if(!navigator.onLine)toast('Reconnect to change your temporary password before editing.','warning');
+    else setTimeout(()=>openAccountDialog(true,true),0);
+  }
 }
 function updateConnectionUI(){const on=navigator.onLine;$('#connectionBadge').textContent=on?'Online':'Offline';$('#connectionBadge').className=`badge ${on?'online':'offline'}`}
 async function updateOfflineWorkUI(){try{const s=await db.getOfflineWorkStatus();$('#syncButton').classList.toggle('hidden',!state.user||!s.dirtyCount);if(s.dirtyCount)$('#syncButton').textContent=`Sync Offline Work (${s.dirtyCount})`}catch{}}
@@ -128,8 +142,62 @@ function syncPublicDefaultCheckbox(){const p=JSON.parse(localStorage.getItem('ca
 async function savePlanningDefault(){const unitId=$('#planUnitSelect').value;if($('#savePlanningDefault').checked){localStorage.setItem('capSchedule.editorDefaultUnit',unitId);try{await db.updateMyDefaultUnit(unitId);state.user.defaultUnitId=unitId}catch(err){toast(err.message,'warning')}toast('This is now your default editing unit.','success')}else{localStorage.removeItem('capSchedule.editorDefaultUnit');if(state.user?.defaultUnitId===unitId){try{await db.updateMyDefaultUnit(null);state.user.defaultUnitId=null}catch(err){toast(err.message,'warning')}}}syncPlanningDefaultCheckbox()}
 function syncPlanningDefaultCheckbox(){const unitId=$('#planUnitSelect').value;const local=localStorage.getItem('capSchedule.editorDefaultUnit');$('#savePlanningDefault').checked=!!unitId&&(state.user?.defaultUnitId===unitId||local===unitId)}
 
-async function openAccountDialog(){const allowed=state.user?.isAppAdmin?state.units:editableUnits();$('#accountDefaultUnit').innerHTML='<option value="">No default</option>'+allowed.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');$('#accountDefaultUnit').value=state.user?.defaultUnitId||'';$('#accountPassword').value='';$('#accountPasswordConfirm').value='';$('#accountError').textContent='';$('#accountDialog').showModal()}
-async function saveAccount(e){e.preventDefault();const b=e.submitter;setBusy(b,true,'Saving…');$('#accountError').textContent='';try{const u=$('#accountDefaultUnit').value||null;await db.updateMyDefaultUnit(u);state.user.defaultUnitId=u;if(u)localStorage.setItem('capSchedule.editorDefaultUnit',u);else localStorage.removeItem('capSchedule.editorDefaultUnit');const p=$('#accountPassword').value,c=$('#accountPasswordConfirm').value;if(p||c){if(p.length<8)throw new Error('New password must be at least 8 characters.');if(p!==c)throw new Error('Passwords do not match.');await db.updatePassword(p)}$('#accountDialog').close();populatePlanUnitSelector();populateSpecialPlanUnitSelector();toast('Account settings saved.','success')}catch(err){$('#accountError').textContent=err.message}finally{setBusy(b,false)}}
+async function openAccountDialog(forcePassword=false,focusPassword=false){
+  const allowed=state.user?.isAppAdmin?state.units:editableUnits();
+  $('#accountDefaultUnit').innerHTML='<option value="">No default</option>'+allowed.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');
+  $('#accountDefaultUnit').value=state.user?.defaultUnitId||'';
+  $('#accountPassword').value='';
+  $('#accountPasswordConfirm').value='';
+  $('#accountError').textContent='';
+  const dialog=$('#accountDialog');
+  dialog.dataset.forcePassword=forcePassword?'true':'false';
+  $('#accountDialogTitle').textContent=forcePassword?'Change Temporary Password':'My Account';
+  $('#accountDialogHelp').textContent=forcePassword
+    ? 'This is your first sign-in with a temporary password. Choose your own password before continuing.'
+    : 'Your password is shared by CAP Schedule, Leadership Feedback, Drill Tests, and Uniform Inspections.';
+  $('#accountCloseButton').classList.toggle('hidden',forcePassword);
+  $('#accountCancelButton').classList.toggle('hidden',forcePassword);
+  $('#accountDefaultUnit').disabled=forcePassword;
+  dialog.showModal();
+  if(forcePassword||focusPassword)setTimeout(()=>$('#accountPassword').focus(),0);
+}
+
+async function saveAccount(e){
+  e.preventDefault();
+  const b=e.submitter;
+  setBusy(b,true,'Saving…');
+  $('#accountError').textContent='';
+  try{
+    const forced=$('#accountDialog').dataset.forcePassword==='true';
+    if(!forced){
+      const u=$('#accountDefaultUnit').value||null;
+      await db.updateMyDefaultUnit(u);
+      state.user.defaultUnitId=u;
+      if(u)localStorage.setItem('capSchedule.editorDefaultUnit',u);
+      else localStorage.removeItem('capSchedule.editorDefaultUnit');
+    }
+
+    const p=$('#accountPassword').value,c=$('#accountPasswordConfirm').value;
+    if(forced&&!p)throw new Error('Choose a new password before continuing.');
+    if(p||c){
+      if(p.length<8)throw new Error('New password must be at least 8 characters.');
+      if(p!==c)throw new Error('Passwords do not match.');
+      await db.updatePassword(p);
+      state.user.mustChangePassword=false;
+    }
+
+    $('#accountDialog').dataset.forcePassword='false';
+    $('#accountDefaultUnit').disabled=false;
+    $('#accountDialog').close();
+    populatePlanUnitSelector();
+    populateSpecialPlanUnitSelector();
+    toast(p?'Password changed for your shared CAP Applications account.':'Account settings saved.','success');
+  }catch(err){
+    $('#accountError').textContent=err.message;
+  }finally{
+    setBusy(b,false);
+  }
+}
 
 async function renderPublicSchedule(){const unitId=$('#publicUnitSelect').value;if(!unitId){$('#publicSchedule').innerHTML='<div class="empty-state">No units are configured.</div>';return}$('#scheduleStatus').textContent=navigator.onLine?'Loading published schedule…':'Offline — showing cached published schedules when available.';try{const [rows,lookup]=await Promise.all([db.getPublicMonth(unitId,state.publicDate.getFullYear(),state.publicDate.getMonth()+1,$('#publicProgramSelect').value),db.getLookupData(unitId)]);state.publicRows=rows;state.publicLookup=lookup;renderPublicRows();$('#scheduleStatus').textContent=rows.length?`${rows.length} published meeting${rows.length===1?'':'s'}${navigator.onLine?'':' from offline cache'}.`:'No published schedule for this selection.'}catch(err){$('#scheduleStatus').textContent=err.message;$('#publicSchedule').innerHTML='';toast(err.message,'error')}}
 function renderPublicRows(){const lookup=state.publicLookup||{groups:[]};$('#publicGroupLegend').innerHTML=(lookup.groups||[]).filter(g=>g.active!==false).map(g=>`<span class="group-chip" style="--chip-color:${esc(g.color)}"><span class="group-dot"></span>${esc(g.name)}</span>`).join('');const view=$('#publicViewSelect').value;if(!state.publicRows.length){$('#publicSchedule').innerHTML='<div class="empty-state"><h2>No published meetings</h2><p>Choose another month, schedule, or unit.</p></div>';return}if(view==='grouped')renderPublicGrouped();else if(view==='plan')renderPublicPlan();else renderPublicBasic()}

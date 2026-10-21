@@ -103,6 +103,7 @@ Deno.serve(async (req) => {
       if(!target) throw new Error('Unable to create or locate the user.');
 
       const profilePatch:any={id:target.id,display_name:displayName};
+      if(creating || password) profilePatch.must_change_password=true;
       if(isAppAdmin) profilePatch.is_app_admin=Boolean(body.is_app_admin);
       const {error:profileError}=await admin.from('profiles').upsert(profilePatch,{onConflict:'id'});if(profileError)throw profileError;
 

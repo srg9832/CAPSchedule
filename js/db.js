@@ -107,9 +107,9 @@ export class CapScheduleDB {
   isUnitAdmin(unitId){if(!this.userContext)return false;if(this.userContext.isAppAdmin)return true;return Boolean(this.userContext.permissions.find(x=>x.unit_id===unitId&&x.is_unit_admin));}
 
   async getUnits(){
-    if(this.demoMode)return deepClone(this.demo.units.filter(u=>u.active));
+    if(this.demoMode)return deepClone(this.demo.units.filter(u=>u.active).sort((a,b)=>String(a.charter_number||'').localeCompare(String(b.charter_number||''),undefined,{numeric:true,sensitivity:'base'})));
     if(!isOnline()){const cached=await getCache(offlineKeys.units);if(cached)return cached;throw new Error('No unit list has been cached for offline use yet.');}
-    const {data,error}=await this.client.from('units').select('*').eq('active',true).order('name');if(error)throw error;await putCache(offlineKeys.units,data||[]);try{localStorage.setItem('capSchedule.cachedUnits',JSON.stringify(data||[]));}catch{}return data||[];
+    const {data,error}=await this.client.from('units').select('*').eq('active',true).order('charter_number').order('name');if(error)throw error;await putCache(offlineKeys.units,data||[]);try{localStorage.setItem('capSchedule.cachedUnits',JSON.stringify(data||[]));}catch{}return data||[];
   }
 
   async getLookupData(unitId){

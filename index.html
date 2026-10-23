@@ -44,8 +44,8 @@
         <div class="field"><label for="publicUnitSelect">Unit</label><select id="publicUnitSelect"></select></div>
         <div class="field"><label for="publicProgramSelect">Schedule</label><select id="publicProgramSelect"><option value="combined">Cadet + Senior</option><option value="cadet">Cadet</option><option value="senior">Senior</option></select></div>
         <div class="field month-field"><label>Month</label><div class="month-nav"><button id="publicPrevMonth" class="icon-button" aria-label="Previous month">‹</button><button id="publicCurrentMonth" class="month-button"></button><button id="publicNextMonth" class="icon-button" aria-label="Next month">›</button></div></div>
-        <div class="field"><label for="publicViewSelect">View</label><select id="publicViewSelect"><option value="basic">Basic</option><option value="grouped">Grouped</option><option value="plan">Plan</option></select></div>
-        <div class="field checkbox-field"><label class="check-label"><input type="checkbox" id="saveDefaultSchedule" /> Display this schedule by default on this device</label></div>
+        <div class="field"><label for="publicViewSelect">View</label><select id="publicViewSelect"><option value="grouped" selected>Grouped</option><option value="plan">Plan</option></select></div>
+        <div class="field checkbox-field"><label class="check-label"><input type="checkbox" id="saveDefaultSchedule" /> Use this unit, schedule, and view as my default</label></div>
         <div class="toolbar-spacer"></div>
         <button id="printScheduleButton" class="button secondary">Print Schedule</button>
       </div>
@@ -90,7 +90,7 @@
           </div></div>
           <div id="requirementDashboard" class="requirement-dashboard"></div>
           <div id="plannerEmpty" class="empty-state"><h2>Select a weekly meeting</h2><p>Choose a date on the left to build its detailed schedule.</p></div>
-          <div id="plannerWorkspace" class="planner-workspace hidden"><div class="planner-actions"><button id="addEventButton" class="button primary small">+ Add Activity</button><button id="activityLibraryButton" class="button secondary small">Activity Library</button><button id="meetingTemplatesButton" class="button secondary small">Meeting Templates</button><span class="planner-hint">Drag to change time/room. Resize from the bottom. Double-click to edit. All edits snap to 5 minutes.</span></div><div id="plannerBoard" class="planner-board"></div></div>
+          <div id="plannerWorkspace" class="planner-workspace hidden"><div class="planner-actions"><button id="addEventButton" class="button primary small">+ Add Activity</button><button id="activityLibraryButton" class="button secondary small">Activity Library</button><button id="meetingTemplatesButton" class="button secondary small">Meeting Templates</button><span class="planner-hint">Drag activities to move them. Resize from the bottom edge. Double-click an activity to edit it, or double-click empty schedule space to add a new activity at that time. All edits snap to 5 minutes.</span></div><div id="plannerBoard" class="planner-board"></div></div>
         </div>
       </div>
     </section>
@@ -109,7 +109,7 @@
       <div id="specialPlanWorkspace" class="special-plan-workspace hidden">
         <div class="special-plan-heading"><div><h2 id="specialPlanTitle"></h2><div id="specialPlanMeta" class="muted-text"></div></div><div class="special-plan-actions"><button id="copyUnitRoomsButton" class="button secondary small">Copy Unit Rooms</button><button id="manageSpecialRoomsButton" class="button secondary small">Manage Activity Rooms</button><button id="publishSpecialButton" class="button primary small">Publish Activity</button></div></div>
         <div id="specialDayTabs" class="day-tabs"></div>
-        <div class="planner-actions"><button id="addSpecialEventButton" class="button primary small">+ Add Scheduled Item</button><span class="planner-hint">The same 5-minute drag/resize planner is used for activities. Use day tabs for multi-day events.</span></div>
+        <div class="planner-actions"><button id="addSpecialEventButton" class="button primary small">+ Add Scheduled Item</button><span class="planner-hint">Drag/resize items directly. Double-click empty schedule space to add an item at that time. Use day tabs for multi-day events.</span></div>
         <div id="specialPlannerBoard" class="planner-board"></div>
       </div>
     </section>

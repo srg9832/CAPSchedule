@@ -14,6 +14,7 @@ function json(body: unknown, status = 200) {
 }
 
 const clean = (value: unknown) => String(value ?? "").trim();
+const validCapid = (value: string) => /^[0-9]{6}$/.test(value);
 
 async function findAuthByEmail(admin: any, email: string) {
   if (!email) return null;
@@ -160,6 +161,7 @@ Deno.serve(async (req: Request) => {
       const capid = clean(body.capid);
       const email = clean(body.email).toLowerCase();
       if (!capid && !email) return json({ error: "Enter a CAPID or email address." });
+      if (capid && !validCapid(capid)) return json({ error: "CAPID must be exactly 6 digits." });
 
       const { user, profile } = await resolveExistingUser(capid, email);
       if (!user) return json({ found: false });
@@ -190,6 +192,7 @@ Deno.serve(async (req: Request) => {
       const capid = clean(body.capid) || null;
       const email = clean(body.email).toLowerCase();
       const displayName = clean(body.display_name) || clean([firstName, lastName].filter(Boolean).join(" "));
+      if (capid && !validCapid(capid)) return json({ error: "CAPID must be exactly 6 digits." });
 
       if (capid) {
         const { data: conflict, error } = await admin.from("profiles").select("id").eq("capid", capid).neq("id", userId).maybeSingle();
@@ -242,6 +245,7 @@ Deno.serve(async (req: Request) => {
     const requestedUserId = clean(body.user_id);
     const editingExisting = callerIsAppAdmin && Boolean(body.edit_identity) && Boolean(requestedUserId);
     let role = clean(body.role || "inspector");
+    if (capid && !validCapid(capid)) return json({ error: "CAPID must be exactly 6 digits." });
     if (role === "admin") role = "application_admin";
 
     if (!["inspector", "unit_admin", "application_admin"].includes(role)) {
